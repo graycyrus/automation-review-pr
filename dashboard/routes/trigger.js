@@ -226,4 +226,5 @@ router.get('/log/:jobId', (req, res) => {
   });
 });
 
+router.activeJobs = activeJobs;
 module.exports = router;

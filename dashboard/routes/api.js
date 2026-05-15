@@ -5,6 +5,7 @@ const { marked } = require('marked');
 const db = require('../db');
 const sync = require('../sync');
 const githubSync = require('../github-sync');
+const triggerRouter = require('./trigger');
 const { scanTrackingDir, scanLogsDir } = require('../parser');
 
 const router = express.Router();
@@ -52,12 +53,21 @@ router.get('/prs', (req, res) => {
 
   const prs = db.queryPrs(filters);
   const liveStatus = sync.getLiveStatus();
+  const activeJobs = triggerRouter.activeJobs;
 
-  const enriched = prs.map(pr => ({
-    ...pr,
-    is_running: liveStatus && liveStatus.running && liveStatus.pr === pr.id,
-    running_phase: liveStatus && liveStatus.running && liveStatus.pr === pr.id ? liveStatus.phase : null,
-  }));
+  const enriched = prs.map(pr => {
+    // Check trigger jobs first (supports multiple concurrent reviews)
+    const job = activeJobs.get(`review-${pr.id}`);
+    const jobRunning = job && !job.done;
+    // Fall back to status.json for reviews started from terminal
+    const statusRunning = liveStatus && liveStatus.running && liveStatus.pr === pr.id;
+
+    return {
+      ...pr,
+      is_running: jobRunning || statusRunning,
+      running_phase: jobRunning ? (liveStatus?.pr === pr.id ? liveStatus.phase : 'A') : (statusRunning ? liveStatus.phase : null),
+    };
+  });
 
   res.json(enriched);
 });
@@ -76,12 +86,15 @@ router.get('/prs/:id', (req, res) => {
 
   const cycles = db.getCyclesByPr(id);
   const liveStatus = sync.getLiveStatus();
+  const job = triggerRouter.activeJobs.get(`review-${id}`);
+  const jobRunning = job && !job.done;
+  const statusRunning = liveStatus && liveStatus.running && liveStatus.pr === id;
 
   res.json({
     ...pr,
     cycles,
-    is_running: liveStatus && liveStatus.running && liveStatus.pr === id,
-    running_phase: liveStatus && liveStatus.running && liveStatus.pr === id ? liveStatus.phase : null,
+    is_running: jobRunning || statusRunning,
+    running_phase: jobRunning ? (liveStatus?.pr === id ? liveStatus.phase : 'A') : (statusRunning ? liveStatus.phase : null),
   });
 });
 
