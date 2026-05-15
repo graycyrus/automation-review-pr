@@ -30,6 +30,10 @@ app.get('*', (req, res) => {
 
 // Initialize
 function start() {
+  // Clear stale status.json from previous session
+  const statusFile = path.join(__dirname, '..', 'status.json');
+  try { fs.writeFileSync(statusFile, JSON.stringify({ running: false })); } catch {}
+
   // Ensure DB is initialized
   db.getDb();
 
