@@ -56,16 +56,15 @@ router.get('/prs', (req, res) => {
   const activeJobs = triggerRouter.activeJobs;
 
   const enriched = prs.map(pr => {
-    // Check trigger jobs first (supports multiple concurrent reviews)
     const job = activeJobs.get(`review-${pr.id}`);
-    const jobRunning = job && !job.done;
-    // Fall back to status.json for reviews started from terminal
+    // If job exists (running or done), trust it over status.json
     const statusRunning = liveStatus && liveStatus.running && liveStatus.pr === pr.id;
+    const isRunning = job ? !job.done : statusRunning;
 
     return {
       ...pr,
-      is_running: jobRunning || statusRunning,
-      running_phase: jobRunning ? (liveStatus?.pr === pr.id ? liveStatus.phase : 'A') : (statusRunning ? liveStatus.phase : null),
+      is_running: isRunning,
+      running_phase: isRunning ? (liveStatus?.pr === pr.id ? liveStatus.phase : 'A') : null,
     };
   });
 
@@ -87,14 +86,14 @@ router.get('/prs/:id', (req, res) => {
   const cycles = db.getCyclesByPr(id);
   const liveStatus = sync.getLiveStatus();
   const job = triggerRouter.activeJobs.get(`review-${id}`);
-  const jobRunning = job && !job.done;
   const statusRunning = liveStatus && liveStatus.running && liveStatus.pr === id;
+  const isRunning = job ? !job.done : statusRunning;
 
   res.json({
     ...pr,
     cycles,
-    is_running: jobRunning || statusRunning,
-    running_phase: jobRunning ? (liveStatus?.pr === id ? liveStatus.phase : 'A') : (statusRunning ? liveStatus.phase : null),
+    is_running: isRunning,
+    running_phase: isRunning ? (liveStatus?.pr === id ? liveStatus.phase : 'A') : null,
   });
 });
 

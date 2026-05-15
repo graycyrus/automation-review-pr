@@ -257,6 +257,15 @@ router.post('/cancel/:jobId', (req, res) => {
   job.exitCode = -1;
   job.endedAt = new Date().toISOString();
 
+  // Clear status.json if it references this PR
+  const statusFile = path.join(BASE_DIR, 'status.json');
+  try {
+    const status = JSON.parse(fs.readFileSync(statusFile, 'utf-8'));
+    if (status.pr === job.pr) {
+      fs.writeFileSync(statusFile, JSON.stringify({ running: false }));
+    }
+  } catch {}
+
   console.log(`[trigger] Job ${jobId} cancelled by user`);
 
   // Clean up after 1 min
