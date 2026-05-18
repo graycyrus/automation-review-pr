@@ -29,14 +29,14 @@
 
 ## Smart Re-review & Comment Resolution
 
-- [ ] On re-trigger (or new review cycle), detect older review comments from `graycyrus`
-- [ ] Check if the PR author has pushed new commits since those comments
-- [ ] Check if the author replied to or addressed specific comments
-- [ ] For each inline comment: determine if the requested change was fulfilled in subsequent commits
-- [ ] If fulfilled → reply acknowledging the fix and resolve the comment thread
-- [ ] If `REQUEST_CHANGES` review exists and all requested changes are addressed → post a new review dismissing/closing the previous request
-- [ ] If author made a generic comment (not addressing specifics) → evaluate whether the concern was still resolved via code changes
-- [ ] Log all resolution actions in the tracking file review history
+- [x] On re-trigger (or new review cycle), detect older review comments from all reviewers/bots
+- [x] Check if the PR author has pushed new commits since those comments
+- [x] Check if the author replied to or addressed specific comments
+- [x] For each inline comment: determine if the requested change was fulfilled in subsequent commits
+- [x] If fulfilled → reply acknowledging the fix and resolve the comment thread
+- [x] If `REQUEST_CHANGES` review exists and all requested changes are addressed → post a new review dismissing/closing the previous request
+- [x] If author made a generic comment (not addressing specifics) → evaluate whether the concern was still resolved via code changes
+- [x] Log all resolution actions in the tracking file review history
 
 ## Individual PR Sync Button
 

@@ -76,7 +76,44 @@ If context file has "Prior Review Context" (continuation review):
 
 ---
 
-## STEP 7: Skip CodeRabbit duplicates
+## STEP 7: Smart re-review + comment resolution
+
+If the context file has "Review Feedback + Resolution Candidates", evaluate each prior unresolved thread before posting the new review.
+
+For each prior inline comment:
+1. Compare the original concern against the current diff and surrounding code.
+2. Check whether the author pushed commits after the comment timestamp.
+3. Check whether the author replied with a specific fix or explanation.
+4. Decide one of:
+   - **Resolved by code** — the requested change is implemented.
+   - **Resolved by explanation** — the concern is no longer valid after the author reply and code inspection.
+   - **Still open** — the bug/risk remains.
+   - **Superseded** — the touched code moved or the original line is gone; verify the underlying concern is gone before treating it as resolved.
+
+When a prior inline comment is resolved, reply to that review comment and resolve the thread:
+
+```bash
+gh api repos/tinyhumansai/openhuman/pulls/comments/<comment_database_id>/replies \
+  -X POST \
+  -f body="Confirmed fixed in the latest revision — <brief concrete reason>."
+
+gh api graphql -f query='
+mutation($threadId:ID!) {
+  resolveReviewThread(input:{threadId:$threadId}) {
+    thread { id isResolved }
+  }
+}' -F threadId=<thread_id>
+```
+
+Only reply to or resolve threads that you have verified against the current code and that are actionable by the `graycyrus` reviewer account. Do not resolve CodeRabbit/bot threads or other human reviewers' threads. Still evaluate those comments for deduplication and risk: if another reviewer raised a still-open blocker, keep the PR in `changes-requested` or mention it in the review body instead of pretending the PR is clean. If a prior `REQUEST_CHANGES` review from `graycyrus` exists and all of its requested changes are addressed, post the new review as `COMMENT` with a body that explicitly says the previous requested changes are addressed. GitHub does not let you "dismiss" your own earlier review via the PR review API; a clean follow-up review is the closing signal.
+
+If the author made a generic comment without addressing specifics, inspect the code anyway. If the code change fixed the concern, resolve it with a code-based explanation. If not, leave the thread unresolved and carry the issue into the new review.
+
+Record every reply/resolve/left-open decision in this cycle's `**Resolution actions**:` tracking field.
+
+---
+
+## STEP 8: Skip CodeRabbit duplicates
 
 The context file lists what CodeRabbit already flagged. **Do NOT repeat these.** Focus on:
 - Project-specific pattern violations CodeRabbit can't catch
@@ -89,7 +126,7 @@ Instruction for yourself: "Skip these findings — CodeRabbit already covered th
 
 ---
 
-## STEP 8: Check red flags
+## STEP 9: Check red flags
 
 From the context file's "Red Flags" section:
 - No linked issue on a feature PR? Flag it.
@@ -100,7 +137,7 @@ From the context file's "Red Flags" section:
 
 ---
 
-## STEP 9: Produce the review (from 06-post-review.md)
+## STEP 10: Produce the review (from 06-post-review.md)
 
 ### Structure
 
@@ -133,7 +170,7 @@ Each inline comment includes:
 
 ---
 
-## STEP 10: Post to GitHub (from 06-post-review.md)
+## STEP 11: Post to GitHub (from 06-post-review.md)
 
 ### Get the latest commit SHA
 ```bash
@@ -166,6 +203,7 @@ EOF
 ### Don't post if
 - The PR is perfect — just note "LGTM, no issues found" in the tracking file (no GitHub comment needed)
 - All findings are duplicates of CodeRabbit — note "CodeRabbit already covered everything" in the tracking file
+- This is a continuation where previous `graycyrus` requested changes are now resolved and no new critical/major findings remain — post a `COMMENT` review noting the previous requested changes are addressed, then move the tracking file to `to-be-approved/`
 
 ### Confirm
 After posting, note:
@@ -177,7 +215,7 @@ Posted review on PR #__PR_NUMBER__:
 
 ---
 
-## STEP 11: Update tracking file
+## STEP 12: Update tracking file
 
 Write the tracking file to `/Users/cyrus/Desktop/automation/review-pr/tinyhumansai-openhuman/PR-__PR_NUMBER__.md`:
 
@@ -203,6 +241,7 @@ Write the tracking file to `/Users/cyrus/Desktop/automation/review-pr/tinyhumans
 **Linked issues**: <issue numbers, or "None">
 **PR-Issue alignment**: <match/mismatch details>
 **CodeRabbit dedup**: <what was skipped>
+**Resolution actions**: <thread replies/resolutions posted, prior requests still open, or "None">
 **Surrounding code patterns checked**: <modules + files read>
 **Dependency audit**: <findings or N/A>
 **Test coverage**: <findings or N/A>
@@ -218,13 +257,14 @@ Write the tracking file to `/Users/cyrus/Desktop/automation/review-pr/tinyhumans
 For **continuation reviews**, append a new "Review <n>" section — don't overwrite prior reviews.
 
 ### Status logic
-- Zero critical/major issues → status `clean` → **move file** to `/Users/cyrus/Desktop/automation/review-pr/to-be-approved/PR-__PR_NUMBER__.md`
+- Zero critical/major issues and all prior `graycyrus` requested changes resolved → status `clean` → **move file** to `/Users/cyrus/Desktop/automation/review-pr/to-be-approved/PR-__PR_NUMBER__.md`
 - Any critical/major issues → status `changes-requested` → keep in `tinyhumansai-openhuman/`
+- Any prior unresolved `graycyrus` requested changes that still remain → status `changes-requested` → keep in `tinyhumansai-openhuman/`
 - BLOCKED (mismatch) → status `blocked` → keep in `tinyhumansai-openhuman/`
 
 ---
 
-## STEP 12: Clean up context file
+## STEP 13: Clean up context file
 
 ```bash
 rm /Users/cyrus/Desktop/automation/review-pr/tinyhumansai-openhuman/.context-PR-__PR_NUMBER__.md
@@ -232,11 +272,11 @@ rm /Users/cyrus/Desktop/automation/review-pr/tinyhumansai-openhuman/.context-PR-
 
 ---
 
-## STEP 13: Print summary
+## STEP 14: Print summary
 
 Print exactly one line:
 ```
-PR #__PR_NUMBER__: <fresh|continuation>, <N critical, N major, N minor> → <REQUEST_CHANGES|moved to to-be-approved|no issues|coderabbit covered all|BLOCKED>
+PR #__PR_NUMBER__: <fresh|continuation>, <N critical, N major, N minor>, <N threads resolved, N still open> → <REQUEST_CHANGES|COMMENT previous changes addressed|moved to to-be-approved|no issues|coderabbit covered all|BLOCKED>
 ```
 
 ---

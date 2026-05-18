@@ -50,6 +50,7 @@ function getDb() {
       action_taken TEXT,
       github_review_url TEXT,
       coderabbit_dedup TEXT,
+      resolution_actions TEXT,
       log_file_path TEXT,
       reviewer TEXT DEFAULT 'graycyrus',
       updated_at TEXT DEFAULT (datetime('now'))
@@ -111,6 +112,9 @@ function getDb() {
   if (!cycleCols.includes('summary')) {
     _db.exec(`ALTER TABLE review_cycles ADD COLUMN summary TEXT`);
   }
+  if (!cycleCols.includes('resolution_actions')) {
+    _db.exec(`ALTER TABLE review_cycles ADD COLUMN resolution_actions TEXT`);
+  }
 
   return _db;
 }
@@ -147,8 +151,8 @@ const prQueries = {
 const cycleQueries = {
   deleteForPr: `DELETE FROM review_cycles WHERE pr_id = ?`,
 
-  insert: `INSERT INTO review_cycles (pr_id, cycle_number, type, status, started_at, ended_at, duration_seconds, commit_sha, summary, gates, areas_changed, findings_critical, findings_major, findings_minor, action_taken, github_review_url, coderabbit_dedup, log_file_path, reviewer, updated_at)
-    VALUES (@pr_id, @cycle_number, @type, @status, @started_at, @ended_at, @duration_seconds, @commit_sha, @summary, @gates, @areas_changed, @findings_critical, @findings_major, @findings_minor, @action_taken, @github_review_url, @coderabbit_dedup, @log_file_path, @reviewer, datetime('now'))`,
+  insert: `INSERT INTO review_cycles (pr_id, cycle_number, type, status, started_at, ended_at, duration_seconds, commit_sha, summary, gates, areas_changed, findings_critical, findings_major, findings_minor, action_taken, github_review_url, coderabbit_dedup, resolution_actions, log_file_path, reviewer, updated_at)
+    VALUES (@pr_id, @cycle_number, @type, @status, @started_at, @ended_at, @duration_seconds, @commit_sha, @summary, @gates, @areas_changed, @findings_critical, @findings_major, @findings_minor, @action_taken, @github_review_url, @coderabbit_dedup, @resolution_actions, @log_file_path, @reviewer, datetime('now'))`,
 
   getByPr: `SELECT * FROM review_cycles WHERE pr_id = ? ORDER BY cycle_number ASC`,
 };

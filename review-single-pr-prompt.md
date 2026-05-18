@@ -41,6 +41,7 @@ All review state is tracked in `/Users/cyrus/Desktop/automation/review-pr/`.
 **Gates**: CI <pass/fail> | Conflicts <pass/fail> | Unresolved feedback <pass/fail>
 **Areas changed**: <Rust core, Frontend, Tauri shell, etc.>
 **CodeRabbit dedup**: <what was skipped>
+**Resolution actions**: <all prior feedback evaluated; graycyrus thread replies/resolutions posted; other reviewer/bot threads left alone; prior requests still open; or "None">
 **Findings**:
 - [critical] <file:line> — <description>
 - [major] <file:line> — <description>
@@ -64,6 +65,52 @@ For **continuation reviews**:
 3. Get the diff: `gh pr diff __PR_NUMBER__ --repo tinyhumansai/openhuman`
 4. Focus review on new/changed code since last review
 5. Reference prior findings — check if they've been addressed
+6. Fetch all prior unresolved review threads/comments and decide whether each requested change is fixed
+
+For smart re-review, gather all prior review feedback:
+```bash
+gh api repos/tinyhumansai/openhuman/pulls/__PR_NUMBER__/reviews
+gh api repos/tinyhumansai/openhuman/pulls/__PR_NUMBER__/comments
+gh api graphql -f query='
+query($owner:String!, $repo:String!, $number:Int!) {
+  repository(owner:$owner, name:$repo) {
+    pullRequest(number:$number) {
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          isResolved
+          path
+          line
+          isOutdated
+          comments(first: 20) {
+            nodes {
+              id
+              databaseId
+              author { login }
+              body
+              createdAt
+              url
+              commit { oid }
+              originalCommit { oid }
+            }
+          }
+        }
+      }
+    }
+  }
+}' -F owner=tinyhumansai -F repo=openhuman -F number=__PR_NUMBER__
+```
+
+For each unresolved thread/comment from any reviewer or bot, inspect the current code and any author replies. Evaluate whether it is fixed, still open, superseded, or only resolved by explanation. If a fixed thread is actionable by the `graycyrus` reviewer account, reply to the original review comment and resolve that thread:
+```bash
+gh api repos/tinyhumansai/openhuman/pulls/comments/<comment_database_id>/replies \
+  -X POST \
+  -f body="Confirmed fixed in the latest revision — <brief concrete reason>."
+
+gh api graphql -f query='mutation($threadId:ID!) { resolveReviewThread(input:{threadId:$threadId}) { thread { id isResolved } } }' -F threadId=<thread_id>
+```
+
+Do not resolve CodeRabbit/bot threads or other human reviewers' threads. Still use all comments for deduplication and risk assessment: if another reviewer raised a still-open blocker, do not treat the PR as clean. If a prior `REQUEST_CHANGES` review from `graycyrus` exists and every requested change is now addressed, post the new review as `COMMENT` saying the previous requested changes are addressed. Log all evaluated/reply/resolve/left-open decisions in `**Resolution actions**:`.
 
 ## STEP 2: Read PR description + linked issues
 
@@ -216,7 +263,7 @@ EOF
 
 ### Step 9: Update tracking file
 
-After reviewing, create or update the tracking file at `/Users/cyrus/Desktop/automation/review-pr/tinyhumansai-openhuman/PR-__PR_NUMBER__.md` with all review details. Each review cycle must include a `**Summary**:` field covering what files changed, what the PR does, and the key modifications.
+After reviewing, create or update the tracking file at `/Users/cyrus/Desktop/automation/review-pr/tinyhumansai-openhuman/PR-__PR_NUMBER__.md` with all review details. Each review cycle must include a `**Summary**:` field covering what files changed, what the PR does, and the key modifications, plus a `**Resolution actions**:` field covering all prior feedback evaluated and smart re-review replies/resolutions or "None".
 
 Set status:
 - **If zero critical/major issues found** → status `clean`, **move file** to `/Users/cyrus/Desktop/automation/review-pr/to-be-approved/PR-__PR_NUMBER__.md`

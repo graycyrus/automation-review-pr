@@ -101,6 +101,7 @@ function parseCycleBlock(block, cycleNumber, timestamp) {
     action_taken: extractField(block, 'Action taken'),
     github_review_url: extractField(block, 'GitHub review URL'),
     coderabbit_dedup: extractField(block, 'CodeRabbit dedup'),
+    resolution_actions: extractMarkdownField(block, 'Resolution actions'),
     log_file_path: null,
     reviewer: 'graycyrus',
   };

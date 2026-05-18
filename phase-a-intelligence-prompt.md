@@ -105,7 +105,73 @@ For continuation: get latest commit and compare with `Last reviewed commit` from
 
 ---
 
-## STEP 5: Get the full diff
+## STEP 5: Gather all review feedback for smart re-review
+
+On continuation reviews, collect all prior GitHub feedback so Phase B can decide what was fixed, what remains open, and which threads the reviewer account can resolve. On fresh reviews, still run this check in case a local tracking file was moved or missing.
+
+### Fetch prior reviews and inline threads
+
+```bash
+gh api repos/tinyhumansai/openhuman/pulls/__PR_NUMBER__/reviews
+gh api repos/tinyhumansai/openhuman/pulls/__PR_NUMBER__/comments
+gh api graphql -f query='
+query($owner:String!, $repo:String!, $number:Int!) {
+  repository(owner:$owner, name:$repo) {
+    pullRequest(number:$number) {
+      reviewDecision
+      commits(last: 20) { nodes { commit { oid committedDate messageHeadline } } }
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          isResolved
+          path
+          line
+          isOutdated
+          comments(first: 20) {
+            nodes {
+              id
+              databaseId
+              author { login }
+              body
+              createdAt
+              url
+              path
+              line
+              originalLine
+              commit { oid }
+              originalCommit { oid }
+            }
+          }
+        }
+      }
+    }
+  }
+}' -F owner=tinyhumansai -F repo=openhuman -F number=__PR_NUMBER__
+```
+
+### What to extract
+
+For each unresolved review thread/comment from any reviewer or bot:
+- Thread ID, comment database ID, URL, file, line, created time, and commit/original commit
+- Author login, reviewer type if obvious (`graycyrus`, human reviewer, CodeRabbit/bot, PR author)
+- The exact concern, severity if present, and requested fix or suggestion
+- Whether the author replied, and a short summary of replies
+- Whether new commits were pushed after the comment timestamp
+- Whether the thread is outdated
+- Which later commits or changed files are likely relevant
+
+For prior `REQUEST_CHANGES` reviews from any reviewer:
+- Review URL/ID, created time, body summary, and commit SHA if available
+- Whether all associated unresolved threads appear addressed by later commits
+
+Do not mark anything resolved in Phase A. Only gather facts. Clearly separate:
+- `graycyrus` threads/reviews we can reply to or resolve
+- Other human reviewer threads we can evaluate but must not resolve
+- Bot/CodeRabbit threads we should dedup against but must not resolve
+
+---
+
+## STEP 6: Get the full diff
 
 ```bash
 gh pr diff __PR_NUMBER__ --repo tinyhumansai/openhuman
@@ -115,7 +181,7 @@ Read the entire diff carefully. Note every file changed.
 
 ---
 
-## STEP 6: Classify Changes + Build Project Checklist (from 05a-classify-and-checklist.md)
+## STEP 7: Classify Changes + Build Project Checklist (from 05a-classify-and-checklist.md)
 
 Look at the PR diff and categorize files:
 
@@ -148,7 +214,7 @@ If **Frontend** files changed:
 
 ---
 
-## STEP 7: Read Surrounding Code (from 05b-context-read.md — CRITICAL)
+## STEP 8: Read Surrounding Code (from 05b-context-read.md — CRITICAL)
 
 For each modified module, read 1–2 **sibling files that are NOT in the diff**. This is what makes our review better than CodeRabbit.
 
@@ -169,7 +235,7 @@ For each modified module, read 1–2 **sibling files that are NOT in the diff**.
 
 ---
 
-## STEP 8: CodeRabbit Dedup (from 05c-dedup-coderabbit.md)
+## STEP 9: CodeRabbit Dedup (from 05c-dedup-coderabbit.md)
 
 ```bash
 gh api repos/tinyhumansai/openhuman/pulls/__PR_NUMBER__/reviews
@@ -193,7 +259,7 @@ If no CodeRabbit review yet, note "No CodeRabbit review yet — do full review."
 
 ---
 
-## STEP 9: Dependency Audit (from 05d-dep-audit.md — conditional)
+## STEP 10: Dependency Audit (from 05d-dep-audit.md — conditional)
 
 **Only if `Cargo.toml`, `package.json`, `Cargo.lock`, or `pnpm-lock.yaml` changed.**
 
@@ -219,7 +285,7 @@ If none changed, write "N/A — no dependency changes."
 
 ---
 
-## STEP 10: Test Coverage (from 05e-test-coverage.md — conditional)
+## STEP 11: Test Coverage (from 05e-test-coverage.md — conditional)
 
 **Only if logic changed (not just config/docs/formatting).**
 
@@ -247,7 +313,7 @@ If no logic changed, write "N/A — no logic changes."
 
 ---
 
-## STEP 11: Impact Scan (from 05f-impact-scan.md — conditional)
+## STEP 12: Impact Scan (from 05f-impact-scan.md — conditional)
 
 **Only if exported functions/types, shared state, services, RPC methods, or event bus events changed.**
 
@@ -318,6 +384,9 @@ Use this exact format:
 
 ## Prior Review Context (continuation only)
 <prior findings, what was flagged, what was addressed since last review>
+
+## Review Feedback + Resolution Candidates
+<all unresolved prior threads/reviews/comments from graycyrus, humans, and bots; author replies; commits pushed after comments; likely fixed/still-open status candidates; and which threads are actionable by graycyrus; or "None">
 
 ## Changed Files
 <list of all files with change type>

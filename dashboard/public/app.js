@@ -704,6 +704,7 @@ function renderPrDetail(pr, container) {
         ${c.github_review_url ? `<a href="${c.github_review_url}" target="_blank" class="btn btn-sm">View on GitHub</a>` : ''}
       </div>
       ${c.coderabbit_dedup ? `<details style="margin-top:8px"><summary style="color:var(--text-muted);font-size:13px;cursor:pointer">CodeRabbit dedup</summary><p style="font-size:13px;color:var(--text-muted);margin-top:4px">${esc(c.coderabbit_dedup)}</p></details>` : ''}
+      ${c.resolution_actions ? `<details style="margin-top:8px"><summary style="color:var(--text-muted);font-size:13px;cursor:pointer">Resolution actions</summary><p class="cycle-note">${esc(c.resolution_actions)}</p></details>` : ''}
     </div>
   `).join('');
 
