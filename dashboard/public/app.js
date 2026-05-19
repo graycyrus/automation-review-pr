@@ -587,25 +587,56 @@ async function approvePr(prId, btn) {
 
 async function mergePr(prId, btn) {
   btn.disabled = true;
-  btn.textContent = 'Merging...';
+  btn.textContent = 'Checking...';
 
   try {
-    const res = await fetch(`${API}/api/trigger/merge/${prId}`, { method: 'POST' });
-    const data = await res.json();
-    if (res.ok) {
-      btn.textContent = 'Running...';
-      // If on detail page, start live log polling
+    // 1. Fetch pre-flight checks
+    const preflight = await fetch(`${API}/api/trigger/merge-preflight/${prId}`);
+    const data = await preflight.json();
+
+    // 2. Build confirmation dialog content
+    const checksHtml = data.checks.map(c => {
+      const icon = c.pass ? '<span style="color:var(--green)">PASS</span>' : '<span style="color:var(--red)">FAIL</span>';
+      return `${icon}  ${c.name}${c.bucket && !c.pass ? ' (' + c.bucket + ')' : ''}`;
+    }).join('\n');
+
+    const summary = data.allPass
+      ? `All ${data.checks.length} checks passing.`
+      : `${data.failCount} of ${data.checks.length} checks failing.`;
+
+    const confirmed = confirm(`Pre-merge checks for PR #${prId}:\n\n${checksHtml}\n\n${summary}\n\nProceed with squash merge?`);
+
+    if (!confirmed) {
+      btn.disabled = false;
+      btn.textContent = 'Merge';
+      return;
+    }
+
+    // 3. Execute merge
+    btn.textContent = 'Merging...';
+    const mergeRes = await fetch(`${API}/api/trigger/merge/${prId}`, { method: 'POST' });
+    const mergeData = await mergeRes.json();
+
+    if (mergeRes.ok) {
+      btn.textContent = 'Merged';
+      // Re-render
       const container = document.getElementById('pr-detail');
       if (container) {
-        checkAndStartLiveLog(prId);
+        const freshRes = await fetch(`${API}/api/prs/${prId}`);
+        if (freshRes.ok) {
+          const freshPr = await freshRes.json();
+          renderPrDetail(freshPr, container);
+        }
+      } else {
+        await fetchAndRender();
       }
     } else {
-      alert(data.error || 'Failed to start merge');
+      alert(mergeData.error || 'Merge failed');
       btn.disabled = false;
       btn.textContent = 'Merge';
     }
   } catch (err) {
-    alert('Failed to merge: ' + err.message);
+    alert('Failed: ' + err.message);
     btn.disabled = false;
     btn.textContent = 'Merge';
   }

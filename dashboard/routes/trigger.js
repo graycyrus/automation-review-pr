@@ -12,7 +12,6 @@ const REVIEW_SCRIPT = path.join(BASE_DIR, 'review-single.sh');
 const CRON_SCRIPT = path.join(BASE_DIR, 'cron-pr-review.sh');
 const LOGS_DIR = path.join(BASE_DIR, 'logs');
 const APPROVED_DIR = path.join(BASE_DIR, 'approved');
-const MERGE_SCRIPT = '/Users/cyrus/Desktop/Code/tinyhuman/openhuman.ai/openhuman/scripts/shortcuts/review/merge.sh';
 const REPO = 'tinyhumansai/openhuman';
 
 // Track active jobs in memory
@@ -406,106 +405,80 @@ function writeApproveLog(prId, lines) {
   } catch {}
 }
 
-// POST /api/trigger/merge/:id — merge an approved PR via the repo's merge script
+// GET /api/trigger/merge-preflight/:id — run pre-merge checks and return results
+router.get('/merge-preflight/:id', (req, res) => {
+  const prId = parseInt(req.params.id, 10);
+  const pr = db.getPrByIdFull ? db.getPrByIdFull(prId) : db.getPrById(prId);
+  if (!pr) return res.status(404).json({ error: 'PR not found' });
+
+  const checks = [];
+
+  // Draft check
+  try {
+    const out = execSync(`gh pr view ${prId} --repo ${REPO} --json isDraft --jq '.isDraft'`, { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    checks.push({ name: 'Not a draft', pass: out === 'false' });
+  } catch { checks.push({ name: 'Not a draft', pass: false }); }
+
+  // Mergeable
+  try {
+    const out = execSync(`gh pr view ${prId} --repo ${REPO} --json mergeable --jq '.mergeable'`, { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    checks.push({ name: 'No merge conflicts', pass: out === 'MERGEABLE' });
+  } catch { checks.push({ name: 'No merge conflicts', pass: false }); }
+
+  // Review decision
+  try {
+    const out = execSync(`gh pr view ${prId} --repo ${REPO} --json reviewDecision --jq '.reviewDecision'`, { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    checks.push({ name: 'Has approval', pass: out === 'APPROVED' });
+  } catch { checks.push({ name: 'Has approval', pass: false }); }
+
+  // CI checks
+  try {
+    const out = execSync(`gh pr checks ${prId} --repo ${REPO} --json name,bucket`, { encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
+    const ciChecks = JSON.parse(out);
+    for (const c of ciChecks) {
+      checks.push({ name: c.name, pass: c.bucket === 'pass' || c.bucket === 'skipping', bucket: c.bucket });
+    }
+  } catch {}
+
+  const allPass = checks.every(c => c.pass);
+  const failCount = checks.filter(c => !c.pass).length;
+
+  res.json({ pr: prId, checks, allPass, failCount });
+});
+
+// POST /api/trigger/merge/:id — merge PR via gh pr merge --squash
 router.post('/merge/:id', (req, res) => {
   const prId = parseInt(req.params.id, 10);
   const githubSync = require('../github-sync');
 
-  // Validate PR exists and is eligible
   const pr = db.getPrByIdFull ? db.getPrByIdFull(prId) : db.getPrById(prId);
   if (!pr) return res.status(404).json({ error: 'PR not found' });
 
   const eligible = pr.status === 'approved' || pr.status === 'clean' || pr.review_decision === 'APPROVED';
   if (!eligible) {
-    return res.status(400).json({ error: `PR #${prId} is not eligible for merge (status: ${pr.status}, review_decision: ${pr.review_decision || 'none'})` });
+    return res.status(400).json({ error: `PR #${prId} is not eligible for merge (status: ${pr.status})` });
   }
 
-  const jobId = `merge-${prId}`;
-  if (activeJobs.has(jobId)) {
-    return res.status(409).json({ error: `Merge for PR #${prId} is already running` });
-  }
+  try {
+    const out = execSync(
+      `gh pr merge ${prId} --repo ${REPO} --squash --delete-branch`,
+      { encoding: 'utf-8', timeout: 60000, stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+    console.log(`[trigger] PR #${prId} merged successfully`);
 
-  const logFile = path.join(LOGS_DIR, `merge-PR-${prId}-${timestamp()}.log`);
-  const logStream = fs.createWriteStream(logFile, { flags: 'a' });
+    // Update DB and move tracking file
+    githubSync.handlePrMerged(prId);
 
-  const child = spawn('bash', [MERGE_SCRIPT, String(prId), '--squash', '--summary-llm', 'none'], {
-    cwd: path.dirname(MERGE_SCRIPT),
-    env: { ...process.env, PATH: process.env.PATH },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+    // Write log
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+    const logFile = path.join(LOGS_DIR, `merge-PR-${prId}-${timestamp()}.log`);
+    fs.writeFileSync(logFile, `[${new Date().toISOString()}] PR #${prId} merged via squash\n${out || ''}\n`);
 
-  const job = {
-    pid: child.pid,
-    pr: prId,
-    type: 'merge',
-    startedAt: new Date().toISOString(),
-    logFile,
-    logLines: [],
-    exitCode: null,
-    done: false,
-    child,
-  };
-  activeJobs.set(jobId, job);
-
-  const appendLine = (line) => {
-    job.logLines.push(line);
-    if (job.logLines.length > MAX_LOG_LINES) job.logLines.shift();
-  };
-
-  let stdoutBuf = '';
-  child.stdout.on('data', (chunk) => {
-    logStream.write(chunk);
-    stdoutBuf += chunk.toString();
-    const lines = stdoutBuf.split('\n');
-    stdoutBuf = lines.pop();
-    lines.forEach(l => appendLine(l));
-  });
-
-  let stderrBuf = '';
-  child.stderr.on('data', (chunk) => {
-    logStream.write(chunk);
-    stderrBuf += chunk.toString();
-    const lines = stderrBuf.split('\n');
-    stderrBuf = lines.pop();
-    lines.forEach(l => appendLine(`[stderr] ${l}`));
-  });
-
-  child.on('close', (code) => {
-    if (stdoutBuf) appendLine(stdoutBuf);
-    if (stderrBuf) appendLine(`[stderr] ${stderrBuf}`);
-    logStream.end();
-    job.exitCode = code;
-    job.done = true;
-    job.endedAt = new Date().toISOString();
-
-    if (code === 0) {
-      // Merge succeeded — update DB and move tracking file
-      githubSync.handlePrMerged(prId);
-      console.log(`[trigger] PR #${prId} merged successfully`);
-    } else {
-      console.log(`[trigger] Merge of PR #${prId} failed with code ${code}`);
-    }
-
-    setTimeout(() => activeJobs.delete(jobId), 5 * 60 * 1000);
-  });
-
-  child.on('error', (err) => {
-    appendLine(`[error] ${err.message}`);
-    logStream.end();
-    job.done = true;
-    job.exitCode = -1;
-    job.endedAt = new Date().toISOString();
+    res.json({ success: true, message: `PR #${prId} merged` });
+  } catch (err) {
     console.error(`[trigger] Merge of PR #${prId} failed: ${err.message}`);
-    setTimeout(() => activeJobs.delete(jobId), 5 * 60 * 1000);
-  });
-
-  res.json({
-    jobId,
-    pr: prId,
-    pid: child.pid,
-    logFile,
-    message: `Merge started for PR #${prId}`,
-  });
+    res.status(500).json({ error: `Merge failed: ${err.stderr || err.message}` });
+  }
 });
 
 // POST /api/trigger/cancel/:jobId — kill a running job
