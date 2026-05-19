@@ -344,6 +344,59 @@ router.post('/approve/:id', (req, res) => {
   }
 });
 
+// POST /api/trigger/unapprove/:id — revert an approved PR back to clean
+router.post('/unapprove/:id', (req, res) => {
+  const prId = parseInt(req.params.id, 10);
+  const TO_BE_APPROVED_DIR = path.join(BASE_DIR, 'to-be-approved');
+
+  try {
+    const pr = db.getPrById(prId);
+    if (!pr) return res.status(404).json({ error: 'PR not found' });
+    if (pr.status !== 'approved') {
+      return res.status(400).json({ error: `PR #${prId} is not approved (current: ${pr.status})` });
+    }
+
+    // Dismiss the APPROVE review on GitHub
+    try {
+      const reviews = execSync(
+        `gh api repos/${REPO}/pulls/${prId}/reviews --jq '[.[] | select(.user.login == "graycyrus" and .state == "APPROVED")] | last | .id'`,
+        { encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
+      ).trim();
+      if (reviews) {
+        execSync(
+          `gh api repos/${REPO}/pulls/${prId}/reviews/${reviews}/dismissals -X PUT -f message="Approval withdrawn" -f event=DISMISS`,
+          { encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
+        );
+        console.log(`[trigger] Dismissed APPROVE review ${reviews} on PR #${prId}`);
+      }
+    } catch (err) {
+      console.warn(`[trigger] Could not dismiss review on PR #${prId}: ${err.message}`);
+    }
+
+    // Update DB status back to clean
+    db.updatePrStatus(prId, 'clean');
+
+    // Move tracking file back to to-be-approved/
+    const trackingPath = pr.tracking_file_path;
+    if (trackingPath && fs.existsSync(trackingPath)) {
+      let content = fs.readFileSync(trackingPath, 'utf-8');
+      content = content.replace(/\*\*Status\*\*:\s*approved/, '**Status**: clean');
+      fs.writeFileSync(trackingPath, content);
+
+      fs.mkdirSync(TO_BE_APPROVED_DIR, { recursive: true });
+      const filename = path.basename(trackingPath);
+      const newPath = path.join(TO_BE_APPROVED_DIR, filename);
+      fs.renameSync(trackingPath, newPath);
+      db.updatePrTrackingPath(prId, newPath, 'to-be-approved');
+    }
+
+    console.log(`[trigger] PR #${prId} unapproved — moved back to to-be-approved/`);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 function writeApproveLog(prId, lines) {
   try {
     fs.mkdirSync(LOGS_DIR, { recursive: true });

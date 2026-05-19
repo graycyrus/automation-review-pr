@@ -13,6 +13,7 @@ const router = express.Router();
 const BASE_DIR = path.resolve(__dirname, '../..');
 const TRACKING_DIR = path.join(BASE_DIR, 'tinyhumansai-openhuman');
 const APPROVED_DIR = path.join(BASE_DIR, 'to-be-approved');
+const FULLY_APPROVED_DIR = path.join(BASE_DIR, 'approved');
 const LOGS_DIR = path.join(BASE_DIR, 'logs');
 
 // GET /api/stats
@@ -231,7 +232,8 @@ router.post('/sync', (req, res) => {
   try {
     const trackingPrs = scanTrackingDir(TRACKING_DIR, 'tinyhumansai-openhuman');
     const approvedPrs = scanTrackingDir(APPROVED_DIR, 'to-be-approved');
-    const allPrs = [...trackingPrs, ...approvedPrs];
+    const fullyApprovedPrs = scanTrackingDir(FULLY_APPROVED_DIR, 'approved');
+    const allPrs = [...trackingPrs, ...approvedPrs, ...fullyApprovedPrs];
 
     for (const { pr, cycles } of allPrs) {
       if (!pr.id) continue;

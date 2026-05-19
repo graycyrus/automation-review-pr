@@ -28,6 +28,7 @@ function formatDuration(seconds) {
 function statusBadge(status) {
   const map = {
     'clean': 'badge-green',
+    'approved': 'badge-green',
     'merged': 'badge-purple',
     'closed': 'badge-red',
     'changes-requested': 'badge-yellow',
@@ -388,6 +389,7 @@ function renderTable(prs) {
       <td>${mergeableBadge(pr.mergeable)}</td>
       <td>
           ${pr.status === 'clean' ? `<button class="btn btn-sm btn-green" onclick="approvePr(${pr.id}, this)">Approve</button>` : ''}
+          ${pr.status === 'approved' ? `<button class="btn btn-sm btn-danger" onclick="unapprovePr(${pr.id}, this)">Unapprove</button>` : ''}
           ${pr.is_running
             ? `<button class="btn btn-sm btn-danger" onclick="cancelReview(${pr.id})">Cancel</button>`
             : `<button class="btn btn-sm btn-primary" onclick="triggerReview(${pr.id})">
@@ -579,6 +581,40 @@ async function approvePr(prId, btn) {
     alert('Failed to approve: ' + err.message);
     btn.disabled = false;
     btn.textContent = 'Approve';
+  }
+}
+
+async function unapprovePr(prId, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Unapproving...';
+
+  try {
+    const res = await fetch(`${API}/api/trigger/unapprove/${prId}`, { method: 'POST' });
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.error || 'Unapprove failed');
+      btn.disabled = false;
+      btn.textContent = 'Unapprove';
+      return;
+    }
+
+    btn.textContent = 'Unapproved';
+
+    const container = document.getElementById('pr-detail');
+    if (container) {
+      const freshRes = await fetch(`${API}/api/prs/${prId}`);
+      if (freshRes.ok) {
+        const freshPr = await freshRes.json();
+        renderPrDetail(freshPr, container);
+      }
+    } else {
+      await fetchAndRender();
+    }
+  } catch (err) {
+    alert('Failed to unapprove: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'Unapprove';
   }
 }
 
@@ -854,6 +890,9 @@ function renderPrDetail(pr, container) {
         <button class="btn" onclick="syncPr(${pr.id}, this)">Sync</button>
         ${pr.status === 'clean' && !pr.is_running
           ? `<button class="btn btn-green" onclick="approvePr(${pr.id}, this)">Approve</button>`
+          : ''}
+        ${pr.status === 'approved'
+          ? `<button class="btn btn-danger" onclick="unapprovePr(${pr.id}, this)">Unapprove</button>`
           : ''}
         ${pr.is_running
           ? `<button class="btn btn-danger" onclick="cancelReview(${pr.id})">Cancel Review</button>
