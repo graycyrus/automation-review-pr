@@ -103,19 +103,71 @@ function moveTrackingFile(prId) {
 function fetchAllOpenPrs() {
   console.log(`[github-sync] Fetching open PRs from ${REPO}...`);
 
-  // Fetch core fields first (lightweight query — no 502s)
-  const coreFields = [
-    'number', 'title', 'author', 'labels', 'isDraft',
-    'reviewDecision', 'createdAt', 'updatedAt',
-    'headRefName', 'baseRefName', 'url',
-    'additions', 'deletions', 'changedFiles',
-    'reviewRequests', 'assignees',
-  ].join(',');
+  // Paginated fetch — gh pr list with 200 causes GitHub GraphQL 502s on large repos
+  // Use gh api graphql with cursor-based pagination in batches of 50
+  const PAGE_SIZE = 50;
+  const prs = [];
 
-  const prs = ghJson(`gh pr list --repo ${REPO} --state open --limit 200 --json ${coreFields}`);
-  if (!prs) {
-    console.error('[github-sync] Failed to fetch PRs');
-    return;
+  let cursor = null;
+  let hasNext = true;
+
+  while (hasNext && prs.length < 200) {
+    const afterClause = cursor ? `, after: \\"${cursor}\\"` : '';
+    const query = `query { repository(owner: \\"tinyhumansai\\", name: \\"openhuman\\") { pullRequests(first: ${PAGE_SIZE}, states: OPEN, orderBy: {field: CREATED_AT, direction: DESC}${afterClause}) { pageInfo { hasNextPage endCursor } nodes { number title isDraft reviewDecision createdAt updatedAt headRefName baseRefName url author { login } labels(first: 10) { nodes { name } } reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } ... on Team { slug } } } } assignees(first: 10) { nodes { login } } } } } }`;
+
+    const batch = ghJson(`gh api graphql -f query="${query}"`);
+    if (!batch) {
+      if (prs.length === 0) {
+        console.error('[github-sync] Failed to fetch PRs');
+        return;
+      }
+      console.warn(`[github-sync] Partial fetch — got ${prs.length} PRs before failure`);
+      break;
+    }
+
+    const prData = batch?.data?.repository?.pullRequests;
+    if (!prData || !prData.nodes) break;
+
+    for (const node of prData.nodes) {
+      prs.push({
+        number: node.number,
+        title: node.title,
+        isDraft: node.isDraft,
+        reviewDecision: node.reviewDecision,
+        createdAt: node.createdAt,
+        updatedAt: node.updatedAt,
+        headRefName: node.headRefName,
+        baseRefName: node.baseRefName,
+        url: node.url,
+        author: node.author ? { login: node.author.login } : {},
+        labels: (node.labels?.nodes || []).map(l => ({ name: l.name })),
+        reviewRequests: (node.reviewRequests?.nodes || []).map(r => r.requestedReviewer || {}),
+        assignees: (node.assignees?.nodes || []),
+      });
+    }
+
+    hasNext = prData.pageInfo.hasNextPage;
+    cursor = prData.pageInfo.endCursor;
+    console.log(`[github-sync]   Fetched page: ${prs.length} PRs so far...`);
+  }
+
+  // Enrich each PR with diff stats (additions/deletions/changedFiles) via per-PR view
+  console.log(`[github-sync] Enriching ${prs.length} PRs with diff stats...`);
+  for (const pr of prs) {
+    try {
+      const out = execSync(
+        `gh pr view ${pr.number} --repo ${REPO} --json additions,deletions,changedFiles`,
+        { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+      const diff = JSON.parse(out);
+      pr.additions = diff.additions;
+      pr.deletions = diff.deletions;
+      pr.changedFiles = diff.changedFiles;
+    } catch {
+      pr.additions = 0;
+      pr.deletions = 0;
+      pr.changedFiles = 0;
+    }
   }
 
   // Fetch mergeable status for non-draft PRs only (requires per-PR GitHub computation)
@@ -271,8 +323,108 @@ function stopPeriodicSync() {
   }
 }
 
+/**
+ * Fetch and sync a single PR from GitHub API + tracking file.
+ * Returns the updated PR data or throws on failure.
+ */
+function fetchSinglePr(prId) {
+  console.log(`[github-sync] Fetching single PR #${prId} from ${REPO}...`);
+
+  const fields = [
+    'number', 'title', 'author', 'labels', 'isDraft',
+    'reviewDecision', 'createdAt', 'updatedAt', 'state',
+    'headRefName', 'baseRefName', 'url',
+    'additions', 'deletions', 'changedFiles',
+    'reviewRequests', 'assignees',
+  ].join(',');
+
+  const pr = ghJson(`gh pr view ${prId} --repo ${REPO} --json ${fields},mergeable,mergeStateStatus`);
+  if (!pr) throw new Error(`Failed to fetch PR #${prId} from GitHub`);
+
+  // Handle merged/closed
+  if (pr.state === 'MERGED') { handlePrMerged(prId); }
+  if (pr.state === 'CLOSED') { handlePrClosed(prId); }
+
+  const authorLogin = pr.author?.login || '';
+  const member = isMember(authorLogin);
+  const existing = db.getPrById(prId);
+
+  let status = 'pending';
+  if (existing && existing.status && existing.status !== 'pending') {
+    status = existing.status;
+  } else if (pr.reviewDecision === 'CHANGES_REQUESTED') {
+    status = 'changes-requested';
+  } else if (pr.reviewDecision === 'APPROVED') {
+    status = 'clean';
+  }
+  if (pr.state === 'MERGED') status = 'merged';
+  if (pr.state === 'CLOSED') status = 'closed';
+
+  const labels = (pr.labels || []).map(l => l.name).join(', ');
+  const reviewers = (pr.reviewRequests || []).map(r => r.name || r.login || r.slug || '').join(', ');
+  const assignees = (pr.assignees || []).map(a => a.login || '').join(', ');
+
+  db.upsertPr({
+    id: prId,
+    title: pr.title,
+    author: authorLogin,
+    branch: pr.headRefName,
+    base_branch: pr.baseRefName || 'main',
+    url: pr.url,
+    created_at: pr.createdAt,
+    status,
+    is_member: member,
+    last_reviewed_commit: existing?.last_reviewed_commit || null,
+    last_review_date: existing?.last_review_date || null,
+    tracking_file_path: existing?.tracking_file_path || null,
+    location: existing?.location || null,
+  });
+
+  // CI checks
+  let checks = [];
+  if (!pr.isDraft) {
+    try {
+      const out = execSync(
+        `gh pr checks ${prId} --repo ${REPO} --json name,bucket,link,startedAt,completedAt,workflow`,
+        { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+      checks = JSON.parse(out);
+    } catch {}
+  }
+
+  const ciTotal = checks.length;
+  const ciPass = checks.filter(c => c.bucket === 'pass').length;
+  const ciFail = checks.filter(c => c.bucket === 'fail').length;
+  const ciPending = checks.filter(c => c.bucket === 'pending' || c.bucket === 'queued').length;
+
+  db.upsertPrGithub({
+    pr_id: prId,
+    is_draft: pr.isDraft ? 1 : 0,
+    review_decision: pr.reviewDecision || null,
+    mergeable: pr.mergeable || null,
+    merge_state_status: pr.mergeStateStatus || null,
+    additions: pr.additions || 0,
+    deletions: pr.deletions || 0,
+    changed_files: pr.changedFiles || 0,
+    labels,
+    reviewers,
+    assignees,
+    updated_at_gh: pr.updatedAt,
+    last_synced: new Date().toISOString(),
+    ci_checks: ciTotal > 0 ? JSON.stringify(checks) : null,
+    ci_total: ciTotal,
+    ci_pass: ciPass,
+    ci_fail: ciFail,
+    ci_pending: ciPending,
+  });
+
+  console.log(`[github-sync] Synced PR #${prId}`);
+  return db.getPrByIdFull(prId);
+}
+
 module.exports = {
   fetchAllOpenPrs,
+  fetchSinglePr,
   fetchOrgMembers,
   isMember,
   handlePrMerged,

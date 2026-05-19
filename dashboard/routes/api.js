@@ -205,6 +205,27 @@ router.get('/status', (req, res) => {
   res.json(liveStatus || { running: false });
 });
 
+// POST /api/prs/:id/sync — sync a single PR (GitHub + tracking file)
+router.post('/prs/:id/sync', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  try {
+    // Re-parse tracking file if it exists
+    const existing = db.getPrById(id);
+    if (existing && existing.tracking_file_path && fs.existsSync(existing.tracking_file_path)) {
+      sync.syncFile(existing.tracking_file_path, existing.location);
+    }
+
+    // Re-fetch from GitHub API
+    const updated = githubSync.fetchSinglePr(id);
+
+    // Return full PR data with cycles
+    const cycles = db.getCyclesByPr(id);
+    res.json({ ...updated, cycles, synced: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/sync — force re-sync from files
 router.post('/sync', (req, res) => {
   try {

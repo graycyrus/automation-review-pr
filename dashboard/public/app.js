@@ -541,6 +541,44 @@ async function triggerDiscover() {
   }
 }
 
+async function syncPr(prId, btn) {
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+  btn.classList.add('syncing');
+
+  try {
+    const res = await fetch(`${API}/api/prs/${prId}/sync`, { method: 'POST' });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Sync failed');
+    }
+    btn.textContent = 'Done';
+
+    // If on detail page, re-render it with fresh data
+    const container = document.getElementById('pr-detail');
+    if (container) {
+      const pr = await res.json().catch(() => null);
+      // Re-fetch full data since response was already consumed
+      const freshRes = await fetch(`${API}/api/prs/${prId}`);
+      if (freshRes.ok) {
+        const freshPr = await freshRes.json();
+        renderPrDetail(freshPr, container);
+      }
+    } else {
+      await fetchAndRender();
+    }
+  } catch (err) {
+    btn.textContent = 'Failed';
+    console.error(`Sync PR #${prId} failed:`, err);
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = origText;
+      btn.classList.remove('syncing');
+    }, 2000);
+  }
+}
+
 async function forceSync() {
   try {
     const res = await fetch(`${API}/api/sync`, { method: 'POST' });
@@ -772,6 +810,7 @@ function renderPrDetail(pr, container) {
       </div>
 
       <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
+        <button class="btn" onclick="syncPr(${pr.id}, this)">Sync</button>
         ${pr.is_running
           ? `<button class="btn btn-danger" onclick="cancelReview(${pr.id})">Cancel Review</button>
              <span class="running-indicator"><span class="running-dot"></span>Running Phase ${pr.running_phase || '?'}...</span>`

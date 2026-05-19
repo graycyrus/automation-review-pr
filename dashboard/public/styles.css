@@ -611,3 +611,9 @@ tbody tr:hover { background: var(--bg-tertiary); }
   .filters { flex-direction: column; }
   .filters input { width: 100%; }
 }
+
+/* Sync button states */
+.btn.syncing {
+  opacity: 0.7;
+  pointer-events: none;
+}

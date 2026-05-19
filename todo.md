@@ -40,11 +40,11 @@
 
 ## Individual PR Sync Button
 
-- [ ] Add "Sync" button on each PR card/row in the dashboard list view
-- [ ] On click, re-fetch that single PR's data from GitHub API (metadata, CI, merge status, comments)
-- [ ] Re-parse the tracking `.md` file from disk
-- [ ] Upsert into DB and re-render just that PR's row/card
-- [ ] Show loading indicator on the individual PR during sync
+- [x] Add "Sync" button on each PR card/row in the dashboard list view
+- [x] On click, re-fetch that single PR's data from GitHub API (metadata, CI, merge status, comments)
+- [x] Re-parse the tracking `.md` file from disk
+- [x] Upsert into DB and re-render just that PR's row/card
+- [x] Show loading indicator on the individual PR during sync
 
 ## Make Repo Public / Open Source Ready
 
