@@ -9,8 +9,8 @@
 const { execSync } = require('child_process');
 
 const REPO = 'tinyhumansai/openhuman';
-const BATCH_SIZE = 50;
-const FIELDS = 'number,title,author,isDraft,reviewDecision,createdAt,updatedAt,headRefName,baseRefName,url,reviewRequests,assignees,labels';
+const BATCH_SIZE = 30;
+const FIELDS = 'number,title,author,isDraft,reviewDecision,createdAt,updatedAt,headRefName,baseRefName,url,labels';
 
 function exec(cmd, timeout = 30000) {
   try {
@@ -31,36 +31,45 @@ function ghJson(cmd, timeout) {
 function run() {
   console.log(`[worker] Fetching open PRs from ${REPO}...`);
 
-  // Batch 1: newest 50 PRs
-  const batch1 = ghJson(`gh pr list --repo ${REPO} --state open --limit ${BATCH_SIZE} --json ${FIELDS} --search "draft:false"`);
-  if (!batch1) {
-    console.error('[worker] Failed to fetch PRs (batch 1)');
-    process.send({ type: 'error', error: 'Failed to fetch PRs' });
-    process.exit(1);
-  }
-  console.log(`[worker] Batch 1: ${batch1.length} PRs`);
+  // Fetch in batches of 30 (GitHub 502s above ~40 with these fields)
+  const allRaw = [];
+  let batchNum = 0;
 
-  // Batch 2: older PRs (created before the oldest in batch 1)
-  let batch2 = [];
-  if (batch1.length >= BATCH_SIZE) {
-    const oldestDate = batch1[batch1.length - 1].createdAt;
-    const result = ghJson(
-      `gh pr list --repo ${REPO} --state open --limit ${BATCH_SIZE} --json ${FIELDS} --search "created:<${oldestDate}"`
-    );
-    if (result) {
-      batch2 = result;
-      console.log(`[worker] Batch 2: ${batch2.length} older PRs`);
+  while (allRaw.length < 200) {
+    batchNum++;
+    let cmd = `gh pr list --repo ${REPO} --state open --limit ${BATCH_SIZE} --json ${FIELDS}`;
+
+    // For subsequent batches, filter by created date before the oldest we've seen
+    if (allRaw.length > 0) {
+      const oldestDate = allRaw[allRaw.length - 1].createdAt;
+      cmd += ` --search "created:<${oldestDate}"`;
     }
+
+    const batch = ghJson(cmd);
+    if (!batch) {
+      if (allRaw.length === 0) {
+        console.error('[worker] Failed to fetch PRs (batch 1)');
+        process.send({ type: 'error', error: 'Failed to fetch PRs' });
+        process.exit(1);
+      }
+      console.warn(`[worker] Batch ${batchNum} failed — continuing with ${allRaw.length} PRs`);
+      break;
+    }
+
+    console.log(`[worker] Batch ${batchNum}: ${batch.length} PRs`);
+    allRaw.push(...batch);
+
+    // If we got fewer than BATCH_SIZE, we've fetched all open PRs
+    if (batch.length < BATCH_SIZE) break;
   }
 
   // Dedup by PR number
   const seen = new Set();
   const prs = [];
-  for (const pr of [...batch1, ...batch2]) {
+  for (const pr of allRaw) {
     const num = pr.number;
     if (seen.has(num)) continue;
     seen.add(num);
-    // Normalize shape to match what github-sync.js expects
     prs.push({
       number: num,
       title: pr.title,
@@ -73,8 +82,8 @@ function run() {
       url: pr.url,
       author: pr.author ? { login: pr.author.login } : {},
       labels: (pr.labels || []),
-      reviewRequests: (pr.reviewRequests || []),
-      assignees: (pr.assignees || []),
+      reviewRequests: [],
+      assignees: [],
     });
   }
 
