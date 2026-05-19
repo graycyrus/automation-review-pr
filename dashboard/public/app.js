@@ -596,8 +596,8 @@ async function mergePr(prId, btn) {
 
     // 2. Build confirmation dialog content
     const checksHtml = data.checks.map(c => {
-      const icon = c.pass ? '<span style="color:var(--green)">PASS</span>' : '<span style="color:var(--red)">FAIL</span>';
-      return `${icon}  ${c.name}${c.bucket && !c.pass ? ' (' + c.bucket + ')' : ''}`;
+      const icon = c.pass ? 'PASS' : 'FAIL';
+      return `[${icon}] ${c.name}${c.bucket && !c.pass ? ' (' + c.bucket + ')' : ''}`;
     }).join('\n');
 
     const summary = data.allPass
