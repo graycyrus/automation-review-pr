@@ -1,6 +1,0 @@
-=== Reviewing PR #1807 ===
-REVIEW_STARTED=2026-05-15T10:41:35Z
-
-[Git] Pulling latest changes...
-error: cannot pull with rebase: You have unstaged changes.
-error: Please commit or stash them.

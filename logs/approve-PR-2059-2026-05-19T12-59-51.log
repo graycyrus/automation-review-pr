@@ -1,4 +1,0 @@
-[2026-05-19T12:59:48.979Z] PR #2059 — status is clean, running pre-flight checks...
-[2026-05-19T12:59:50.528Z] CI passing: false
-[2026-05-19T12:59:51.380Z] No conflicts: false
-[2026-05-19T12:59:51.380Z] Pre-flight failed: CI not passing, merge conflicts

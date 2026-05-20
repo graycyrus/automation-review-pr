@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# OS
+.DS_Store
+
+# Runtime logs + state
+logs/
+*.log
+status.json
+.tmux-state/
+
+# SQLite databases (runtime data)
+dashboard/data/*.db
+dashboard/data/*.db-shm
+dashboard/data/*.db-wal
+dashboard-next/data/*.db
+dashboard-next/data/*.db-shm
+dashboard-next/data/*.db-wal
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Next.js
+.next/
+out/
+build/
+dist/
+.turbo/
+next-env.d.ts
+
+# Editor scratch
+*.swp
+*.swo
+node_modules

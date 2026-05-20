@@ -1,6 +1,0 @@
-[15:55:22] === PR Review Cron — 2026-05-15-1555 ===
-[15:55:22] Phase 1: Discovering eligible PRs...
-[15:58:49] Found 23 eligible PR(s): 1804 1803 1802 1798 1794 1791 1790 1789 1788 1787 1786 1775 1769 1750 1747 1738 1737 1735 1730 1727 1726 1720 1719
-[15:58:49] Git: Pulling latest changes...
-error: cannot pull with rebase: You have unstaged changes.
-error: Please commit or stash them.
