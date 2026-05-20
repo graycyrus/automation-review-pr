@@ -136,17 +136,42 @@ function listPanes() {
 const IDLE_SHELLS = new Set(['bash', 'zsh', 'sh', 'fish']);
 
 /**
+ * Returns the set of pane_ids that are currently reserved by an in-flight
+ * fix. A "reserved" pane has a fix-<prId>.json mapping but no matching
+ * .exit sentinel yet — i.e. claude/pnpm is presumably still running there.
+ * Used to prevent two rapid Fix clicks from both grabbing the same pane
+ * before tmux's pane_current_command updates from `zsh` to `node`/`claude`.
+ */
+function reservedPaneIds() {
+  const reserved = new Set();
+  let entries;
+  try { entries = fs.readdirSync(STATE_DIR); } catch { return reserved; }
+  for (const file of entries) {
+    const m = file.match(/^fix-(\d+)\.json$/);
+    if (!m) continue;
+    const prId = m[1];
+    if (fs.existsSync(path.join(STATE_DIR, `fix-${prId}.exit`))) continue;
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(STATE_DIR, file), 'utf-8'));
+      if (data.pane_id) reserved.add(data.pane_id);
+    } catch {}
+  }
+  return reserved;
+}
+
+/**
  * Find an idle pane that's already sitting in an openhuman workspace clone.
- * "Idle" means its foreground command is a plain shell. Returns null if no
- * suitable pane is available.
+ * "Idle" means its foreground command is a plain shell AND no in-flight
+ * fix has already claimed the pane (the latter is the race fix).
  */
 function pickIdlePane() {
-  const panes = listPanes();
+  const reserved = reservedPaneIds();
   return (
-    panes.find(
+    listPanes().find(
       (p) =>
         IDLE_SHELLS.has(p.command) &&
-        /\/openhuman-\d+(?:\/|$)/.test(p.cwd || ''),
+        /\/openhuman-\d+(?:\/|$)/.test(p.cwd || '') &&
+        !reserved.has(p.pane_id),
     ) ?? null
   );
 }
@@ -233,11 +258,16 @@ function capturePane(paneId, opts = {}) {
 
 /**
  * List panes that are candidates for running a fix: foreground command is
- * an idle shell and cwd points at an openhuman-N clone.
+ * an idle shell, cwd is an openhuman-N clone, and no in-flight fix has
+ * already claimed the pane.
  */
 function listIdleOpenhumanPanes() {
+  const reserved = reservedPaneIds();
   return listPanes().filter(
-    (p) => IDLE_SHELLS.has(p.command) && /\/openhuman-\d+(?:\/|$)/.test(p.cwd || ''),
+    (p) =>
+      IDLE_SHELLS.has(p.command) &&
+      /\/openhuman-\d+(?:\/|$)/.test(p.cwd || '') &&
+      !reserved.has(p.pane_id),
   );
 }
 
@@ -255,6 +285,9 @@ function startFixInSpecificPane(prId, logFile, paneId) {
   const pane = listPanes().find((p) => p.pane_id === paneId);
   if (!pane) throw new Error(`Pane ${paneId} not found`);
   if (!IDLE_SHELLS.has(pane.command)) throw new Error(`Pane ${paneId} is busy (${pane.command})`);
+  if (reservedPaneIds().has(pane.pane_id)) {
+    throw new Error(`Pane ${paneId} already has an in-flight fix running`);
+  }
 
   try { fs.unlinkSync(fixMarkerPath(prId)); } catch {}
   const marker = fixMarkerPath(prId);
@@ -370,6 +403,7 @@ module.exports = {
   pickIdlePane,
   listIdleOpenhumanPanes,
   capturePane,
+  reservedPaneIds,
   sendToPane,
   sendKey,
 };

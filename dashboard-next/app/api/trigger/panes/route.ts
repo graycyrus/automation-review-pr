@@ -10,16 +10,26 @@ export async function GET() {
     return NextResponse.json({ session: null, panes: [] });
   }
 
+  // Panes already running an in-flight fix shouldn't appear as idle even
+  // when their tmux pane_current_command is still a shell — pnpm/claude
+  // hasn't started yet but the keystrokes are already queued.
+  const reserved: Set<string> = tmux.reservedPaneIds();
+
   const panes = tmux.listPanes()
     .filter((p: any) => /\/openhuman-\d+(?:\/|$)/.test(p.cwd || ''))
-    .map((p: any) => ({
-      pane_id: p.pane_id,
-      window: p.window,
-      command: p.command,
-      cwd: p.cwd,
-      workspace: p.cwd?.match(/\/openhuman-\d+/)?.[0]?.slice(1) ?? p.cwd,
-      idle: ['bash', 'zsh', 'sh', 'fish'].includes(p.command),
-    }))
+    .map((p: any) => {
+      const shellIdle = ['bash', 'zsh', 'sh', 'fish'].includes(p.command);
+      const isReserved = reserved.has(p.pane_id);
+      return {
+        pane_id: p.pane_id,
+        window: p.window,
+        command: isReserved ? `${p.command} (fix queued)` : p.command,
+        cwd: p.cwd,
+        workspace: p.cwd?.match(/\/openhuman-\d+/)?.[0]?.slice(1) ?? p.cwd,
+        idle: shellIdle && !isReserved,
+        reserved: isReserved,
+      };
+    })
     .sort((a: any, b: any) => {
       // idle first, then by workspace number
       if (a.idle !== b.idle) return a.idle ? -1 : 1;
