@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { execSync, spawnSync } from 'child_process';
+import { db } from '@/lib/server-deps';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +30,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     const authorLogin: string = view.author?.login;
     const authorName: string | undefined = view.author?.name;
     if (!authorLogin) throw new Error('Could not determine PR author');
+
+    // Skip team members entirely — welcome comments are for external
+    // contributors. is_member is set by the github-sync worker from the
+    // hardcoded ORG_MEMBERS list.
+    const prRow = db.getPrById(prId);
+    if (prRow?.is_member === 1) {
+      return NextResponse.json({ posted: false, skipped: 'team_member', contributor: authorLogin });
+    }
 
     // 2) First contribution check. After the merge this PR itself appears in
     // the merged list, so "first" = at most this PR (length <= 1).
@@ -66,7 +75,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       'Style requirements:',
       '- ALL LOWERCASE. no capital letters anywhere, including names/handles.',
       '- casual, friendly tone, like talking to a teammate. a bit excited and hyped about the merge.',
-      '- sprinkle in a few relevant emojis (2-3 total, not more). examples: 🙌 🚀 ✨ 💚 🎉 🔥.',
+      '- use 1 or 2 relevant emojis MAX across the whole comment. examples: 🙌 🚀 ✨ 💚 🎉 🔥.',
       '- NO em dashes (—) or en dashes (–). use commas, periods, or parens instead.',
       '- address them by handle once.',
       '- call out one specific thing about this contribution (use the title or description).',

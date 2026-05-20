@@ -118,7 +118,7 @@ export const api = {
   // merge has already succeeded by the time we call this.
   welcome: async (id: number) => {
     try {
-      return await jpost<{ posted: boolean; first_contribution?: boolean; comment?: string; error?: string }>(
+      return await jpost<{ posted: boolean; first_contribution?: boolean; comment?: string; error?: string; skipped?: string; contributor?: string }>(
         `/api/trigger/welcome/${id}`,
       );
     } catch (e: any) {

@@ -52,6 +52,8 @@ export function PrActions({ pr, onAction }: { pr: Pr; onAction: () => void }) {
           ? `Posted welcome + Discord invite to first-time contributor`
           : `Posted thank-you to returning contributor`,
       });
+    } else if (r.skipped === 'team_member') {
+      setToast({ tone: 'info', message: `Welcome comment skipped: @${r.contributor} is on the team` });
     } else if (r.error) {
       setToast({ tone: 'info', message: `Merge done. Welcome comment skipped: ${r.error.slice(0, 200)}` });
     }
