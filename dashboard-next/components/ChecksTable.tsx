@@ -14,11 +14,55 @@ const bucketOrder: Record<string, number> = { fail: 0, pending: 1, queued: 1, sk
 export function ChecksTable({ prId }: { prId: number }) {
   const [data, setData] = useState<{ checks: CiCheck[]; total: number; pass: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  useEffect(() => { api.prChecks(prId).then(setData).catch((e) => setErr(e.message)); }, [prId]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Render cached data immediately, then trigger a server-side refresh so
+  // the user sees fresh CI without waiting for the next worker cycle.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cached = await api.prChecks(prId, false);
+        if (!cancelled) setData(cached);
+      } catch (e: any) { if (!cancelled) setErr(e.message); }
+
+      if (!cancelled) setRefreshing(true);
+      try {
+        const fresh = await api.prChecks(prId, true);
+        if (!cancelled && fresh.refreshed) setData(fresh);
+      } catch {}
+      if (!cancelled) setRefreshing(false);
+    })();
+    return () => { cancelled = true; };
+  }, [prId]);
+
+  const manualRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const fresh = await api.prChecks(prId, true);
+      setData(fresh);
+      setErr(null);
+    } catch (e: any) { setErr(e.message); }
+    finally { setRefreshing(false); }
+  };
 
   const badge = err
     ? <Badge tone="red">Error</Badge>
-    : data ? <Badge tone="gray">{data.pass}/{data.total} passing</Badge> : <Badge tone="gray">Loading…</Badge>;
+    : data
+      ? <span className="flex items-center gap-2">
+          <Badge tone={refreshing ? 'yellow' : 'gray'}>
+            {refreshing ? 'refreshing…' : `${data.pass}/${data.total} passing`}
+          </Badge>
+          <button
+            onClick={manualRefresh}
+            disabled={refreshing}
+            className="rounded border border-[var(--color-border)] bg-[var(--color-bg-tertiary)] hover:bg-[var(--color-border)] px-2 py-0.5 text-xs disabled:opacity-50"
+            title="Re-fetch CI from GitHub"
+          >
+            ↻
+          </button>
+        </span>
+      : <Badge tone="gray">Loading…</Badge>;
 
   const sorted = data?.checks ? [...data.checks].sort((a, b) => (bucketOrder[a.bucket] ?? 9) - (bucketOrder[b.bucket] ?? 9)) : [];
 

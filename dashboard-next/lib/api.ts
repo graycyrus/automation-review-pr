@@ -32,7 +32,10 @@ export const api = {
     return jget<Pr[]>(`/api/prs${qs ? `?${qs}` : ''}`);
   },
   pr: (id: number) => jget<Pr>(`/api/prs/${id}`),
-  prChecks: (id: number) => jget<{ checks: CiCheck[]; total: number; pass: number; fail: number; pending: number }>(`/api/prs/${id}/checks`),
+  prChecks: (id: number, refresh = false) =>
+    jget<{ checks: CiCheck[]; total: number; pass: number; fail: number; pending: number; refreshed?: boolean }>(
+      `/api/prs/${id}/checks${refresh ? '?refresh=1' : ''}`,
+    ),
   prTrackingHtml: async (id: number): Promise<string | null> => {
     const r = await fetch(`/api/prs/${id}/tracking/html`);
     return r.ok ? r.text() : null;

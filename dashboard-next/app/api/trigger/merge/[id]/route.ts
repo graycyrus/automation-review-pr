@@ -39,16 +39,29 @@ function buildSquashMessage(prId: number) {
     }
   }
 
+  // "Our github creds" = the local git identity (user.name / user.email).
+  // This matches what the user signs commits with day-to-day (e.g.
+  // "Steven Enamakel <enamakel@tinyhumans.ai>") rather than the gh CLI's
+  // noreply form. Falls back to `gh api user` if git isn't configured.
   try {
-    const me: any = JSON.parse(
-      execSync(`gh api user`, { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }),
-    );
-    const myName = me.name || me.login;
-    const myEmail = `${me.id}+${me.login}@users.noreply.github.com`;
-    coAuthors.set(myEmail.toLowerCase(), `Co-authored-by: ${myName} <${myEmail}>`);
+    const name = execSync('git config --get user.name', { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const email = execSync('git config --get user.email', { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    if (name && email) {
+      coAuthors.set(email.toLowerCase(), `Co-authored-by: ${name} <${email}>`);
+    } else {
+      throw new Error('git user.name/email not set');
+    }
   } catch {
-    // gh api user can fail under rare auth states — co-author addition is
-    // best-effort, the merge itself should still proceed.
+    try {
+      const me: any = JSON.parse(
+        execSync(`gh api user`, { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }),
+      );
+      const myName = me.name || me.login;
+      const myEmail = `${me.id}+${me.login}@users.noreply.github.com`;
+      coAuthors.set(myEmail.toLowerCase(), `Co-authored-by: ${myName} <${myEmail}>`);
+    } catch {
+      // Best-effort — merge itself should still proceed.
+    }
   }
 
   const trailers = [...coAuthors.values()].join('\n');
