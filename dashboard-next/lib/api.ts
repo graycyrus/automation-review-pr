@@ -94,7 +94,19 @@ export const api = {
   approve: (id: number) => jpost<{ success: boolean; review_url?: string }>(`/api/trigger/approve/${id}`),
   unapprove: (id: number) => jpost<{ success: boolean }>(`/api/trigger/unapprove/${id}`),
   mergePreflight: (id: number) => jget<{ checks: Array<{ name: string; pass: boolean }>; allPass: boolean }>(`/api/trigger/merge-preflight/${id}`),
-  merge: (id: number) => jpost<{ success: boolean; message: string }>(`/api/trigger/merge/${id}`),
+  merge: async (id: number, opts: { force?: boolean } = {}) => {
+    const res = await fetch(`/api/trigger/merge/${id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({ force: opts.force === true }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || `${res.status}`);
+    }
+    return res.json() as Promise<{ success: boolean; force?: boolean; message: string }>;
+  },
   syncPr: (id: number) => jpost<Pr>(`/api/prs/${id}/sync`),
   syncAll: () => jpost<{ synced: number }>('/api/sync'),
 };

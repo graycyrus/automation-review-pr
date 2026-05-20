@@ -78,11 +78,51 @@ export function PrActions({ pr, onAction }: { pr: Pr; onAction: () => void }) {
       )}
 
       {(pr.status === 'approved' || pr.review_decision === 'APPROVED') && !pr.is_running && (
-        <Button size="sm" variant="purple" onClick={() => {
-          if (!confirm(`Merge PR #${pr.id}?`)) return;
-          run('merge', () => api.merge(pr.id));
-        }} disabled={busy !== null}>
+        <Button
+          size="sm"
+          variant="purple"
+          onClick={() => {
+            if (!confirm(`Merge PR #${pr.id}? (squash + delete branch)`)) return;
+            run('merge', () => api.merge(pr.id), `Merged #${pr.id}`);
+          }}
+          disabled={busy !== null}
+        >
           {busy === 'merge' ? 'Merging…' : 'Merge'}
+        </Button>
+      )}
+
+      {pr.status === 'clean' && !pr.is_running && (
+        <Button
+          size="sm"
+          variant="purple"
+          onClick={async () => {
+            if (!confirm(`Approve and merge PR #${pr.id}? (squash + delete branch)`)) return;
+            await run('approveMerge', async () => {
+              await api.approve(pr.id);
+              return api.merge(pr.id);
+            }, `Approved + merged #${pr.id}`);
+          }}
+          disabled={busy !== null}
+          title="Post an approving review and then squash-merge"
+        >
+          {busy === 'approveMerge' ? 'Working…' : 'Approve & Merge'}
+        </Button>
+      )}
+
+      {!pr.is_running && pr.status !== 'merged' && pr.status !== 'closed' && (
+        <Button
+          size="sm"
+          variant="red"
+          onClick={() => {
+            if (!confirm(
+              `Force-merge PR #${pr.id}? This bypasses branch protection and failing checks via \`gh pr merge --admin\`. Requires admin rights on the repo.`,
+            )) return;
+            run('forceMerge', () => api.merge(pr.id, { force: true }), `Force-merged #${pr.id}`);
+          }}
+          disabled={busy !== null}
+          title="gh pr merge --squash --admin --delete-branch"
+        >
+          {busy === 'forceMerge' ? 'Force-merging…' : 'Force Merge'}
         </Button>
       )}
 
