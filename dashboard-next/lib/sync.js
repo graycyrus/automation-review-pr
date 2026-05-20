@@ -114,6 +114,36 @@ function getLiveStatus() {
 }
 
 let watchers = [];
+let rescanInterval = null;
+
+// fs.watch() on macOS reliably catches dir entry add/remove but frequently
+// misses in-place modifications to existing files. Review scripts overwrite
+// the tracking .md files, so fs.watch alone leaves the DB stale until the
+// next GitHub sync. A cheap mtime-based rescan every 10s closes that gap.
+const RESCAN_INTERVAL_MS = 10_000;
+const lastSeenMtime = new Map();
+
+function rescanDir(dirPath, location) {
+  if (!fs.existsSync(dirPath)) return;
+  let entries;
+  try { entries = fs.readdirSync(dirPath); } catch { return; }
+  for (const filename of entries) {
+    if (!/^PR-\d+\.md$/.test(filename)) continue;
+    const fullPath = path.join(dirPath, filename);
+    let mtime;
+    try { mtime = fs.statSync(fullPath).mtimeMs; } catch { continue; }
+    if (lastSeenMtime.get(fullPath) === mtime) continue;
+    lastSeenMtime.set(fullPath, mtime);
+    syncFile(fullPath, location);
+  }
+}
+
+function periodicRescan() {
+  rescanDir(TRACKING_DIR, 'tinyhumansai-openhuman');
+  rescanDir(APPROVED_DIR, 'to-be-approved');
+  rescanDir(FULLY_APPROVED_DIR, 'approved');
+  rescanDir(MERGED_DIR, 'already-merged');
+}
 
 function startWatching() {
   console.log('[sync] Starting file watchers...');
@@ -122,7 +152,13 @@ function startWatching() {
   watchers.push(watchDir(FULLY_APPROVED_DIR, 'approved'));
   watchers.push(watchDir(MERGED_DIR, 'already-merged'));
   watchers.push(watchStatusFile());
-  console.log('[sync] Watching: tinyhumansai-openhuman/, to-be-approved/, already-merged/, status.json');
+
+  // Prime the mtime cache from the initial migration so we don't re-emit
+  // every file as "changed" on the first tick.
+  periodicRescan();
+  rescanInterval = setInterval(periodicRescan, RESCAN_INTERVAL_MS);
+
+  console.log(`[sync] Watching tracking dirs + rescanning every ${RESCAN_INTERVAL_MS / 1000}s`);
 }
 
 function stopWatching() {
@@ -130,6 +166,7 @@ function stopWatching() {
     if (w) w.close();
   }
   watchers = [];
+  if (rescanInterval) { clearInterval(rescanInterval); rescanInterval = null; }
 }
 
 module.exports = {

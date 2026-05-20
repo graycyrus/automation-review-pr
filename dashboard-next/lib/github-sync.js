@@ -7,7 +7,7 @@ const REPO = 'tinyhumansai/openhuman';
 const BASE_DIR = path.resolve(process.cwd(), '..');
 const MERGED_DIR = path.join(BASE_DIR, 'already-merged');
 const WORKER_PATH = path.join(process.cwd(), 'lib', 'github-sync-worker.js');
-const SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+const SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — keeps mergeable/CI/review_decision fresh
 
 // Hardcoded org members — update manually when team changes
 const ORG_MEMBERS = new Set([
