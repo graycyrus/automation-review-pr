@@ -121,7 +121,7 @@ function startWatching() {
   watchers.push(watchDir(APPROVED_DIR, 'to-be-approved'));
   watchers.push(watchDir(FULLY_APPROVED_DIR, 'approved'));
   watchers.push(watchDir(TO_BE_CLOSED_DIR, 'to-be-closed'));
-  watchers.push(watchDir(MERGED_DIR, 'already-merged'));
+  // Don't watch already-merged — these are archived and shouldn't be in the DB
   watchers.push(watchStatusFile());
   console.log('[sync] Watching: tinyhumansai-openhuman/, to-be-approved/, already-merged/, status.json');
 }

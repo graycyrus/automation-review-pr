@@ -18,8 +18,7 @@ function migrate() {
   const approvedPrs = scanTrackingDir(APPROVED_DIR, 'to-be-approved');
   const fullyApprovedPrs = scanTrackingDir(FULLY_APPROVED_DIR, 'approved');
   const toBeClosedPrs = scanTrackingDir(TO_BE_CLOSED_DIR, 'to-be-closed');
-  const mergedPrs = scanTrackingDir(MERGED_DIR, 'already-merged');
-  const allPrs = [...trackingPrs, ...approvedPrs, ...fullyApprovedPrs, ...toBeClosedPrs, ...mergedPrs];
+  const allPrs = [...trackingPrs, ...approvedPrs, ...fullyApprovedPrs, ...toBeClosedPrs];
 
   console.log(`[migrate] Found ${allPrs.length} PR tracking files`);
 
