@@ -17,6 +17,11 @@ STATUS_FILE="${SCRIPT_DIR}/status.json"
 
 export PATH="/Users/cyrus/.nvm/versions/node/v22.22.1/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
 
+# Load .env
+if [ -f "${SCRIPT_DIR}/.env" ]; then
+    set -a; source "${SCRIPT_DIR}/.env"; set +a
+fi
+
 REVIEW_START=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 START_EPOCH=$(date +%s)
 
@@ -188,6 +193,14 @@ fi
 # Always included
 PROMPT+="$(sed "s/__PR_NUMBER__/${PR}/g" "${PARTS_DIR}/review-post.md")"$'\n\n'
 PROMPT+="$(sed "s/__PR_NUMBER__/${PR}/g" "${PARTS_DIR}/tracking-update.md")"$'\n\n'
+
+# Reviewer identity — injected after base rules, before footer (overrides take precedence)
+REVIEWER_IDENTITY="${SCRIPT_DIR}/reviewers/${REVIEWER:-cyrus}.md"
+if [ -f "${REVIEWER_IDENTITY}" ]; then
+    PROMPT+="$(sed "s/__PR_NUMBER__/${PR}/g" "${REVIEWER_IDENTITY}")"$'\n\n'
+    SECTIONS_INCLUDED+=", reviewer-identity"
+fi
+
 PROMPT+="$(sed "s/__PR_NUMBER__/${PR}/g" "${PARTS_DIR}/footer.md")"
 SECTIONS_INCLUDED+=", review-post, tracking-update, footer"
 
@@ -226,7 +239,7 @@ if [ -z "${CRON_MODE:-}" ]; then
     echo ""
     echo "[Git] Committing and pushing review outputs..."
     cd "${SCRIPT_DIR}"
-    git add tinyhumansai-openhuman/ to-be-approved/ 2>/dev/null || true
+    git add tinyhumansai-openhuman/ to-be-approved/ approved/ to-be-closed/ already-merged/ 2>/dev/null || true
     git commit -m "Review PR #${PR}" || echo "Nothing to commit"
     git stash --quiet 2>/dev/null || true
     git pull --rebase origin main || echo "[Git] Pull failed, continuing anyway"
