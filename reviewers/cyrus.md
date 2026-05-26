@@ -31,10 +31,10 @@ The base review playbook above sets default rules for any automated reviewer. As
 gh pr checks <N> --repo tinyhumansai/openhuman
 ```
 
-- **CI all green** + code is clean → `APPROVE`
-- **CI failing/pending** + code is clean → `COMMENT` with: "Code review looks clean — will approve once CI passes." Do NOT use APPROVE event.
-- **CI failing/pending** + code has issues → `REQUEST_CHANGES` (mention both CI and code issues)
-- **CI all green** + code has issues → `REQUEST_CHANGES`
+- **CI all green + no conflicts** + code is clean → `APPROVE`
+- **CI failing/pending or merge conflicts** + code is clean → `COMMENT` tagging the author: "@<author> hey! the code looks good to me, but there are some CI failures (or merge conflicts) that need to be resolved first. once those are green, i'll come back and approve this. let me know if you need any help!" Do NOT use APPROVE event. Do NOT do a full code review — just skim for obvious issues.
+- **CI failing/pending or merge conflicts** + code has issues → `COMMENT` tagging the author: "@<author> heads up — CI is failing (or there are merge conflicts) on this PR, so i'll hold off on a full review until those are sorted out. i did spot a few things while skimming though: [brief list]. fix the CI/conflicts first and i'll do a proper review after!" Do NOT use REQUEST_CHANGES or APPROVE.
+- **CI all green + no conflicts** + code has issues → `REQUEST_CHANGES`
 
 ### Override 4: Tracking status — approved
 > Base rule says: clean PRs (0 critical/major) → `clean` → move to `to-be-approved/`
@@ -116,11 +116,11 @@ gh pr merge <N> --repo tinyhumansai/openhuman --squash
 
 | Scenario | Action |
 |----------|--------|
-| All criteria met + CI green | APPROVE |
+| All criteria met + CI green + no conflicts | APPROVE |
 | Minor issues only + CI green | APPROVE with comments |
-| Code is clean + CI failing/pending | COMMENT — "looks clean, will approve once CI passes" |
-| Missing tests for new logic | REQUEST_CHANGES |
-| Security concern (any severity) | REQUEST_CHANGES, flag urgently |
-| Performance regression | REQUEST_CHANGES |
-| Works but unmaintainable | REQUEST_CHANGES |
-| Merge conflicts | Do not review — gate should catch this |
+| Code is clean + CI failing/pending/conflicts | COMMENT — tag author, ask to fix CI/conflicts, will approve after |
+| Code has issues + CI failing/pending/conflicts | COMMENT — tag author, flag CI/conflicts first + brief issues spotted |
+| Missing tests for new logic + CI green | REQUEST_CHANGES |
+| Security concern (any severity) + CI green | REQUEST_CHANGES, flag urgently |
+| Performance regression + CI green | REQUEST_CHANGES |
+| Works but unmaintainable + CI green | REQUEST_CHANGES |
