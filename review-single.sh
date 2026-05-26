@@ -138,6 +138,28 @@ else
     echo "[Pre-check] No CodeRabbit review"
 fi
 
+# Check CI status
+echo "[Pre-check] Checking CI status..."
+CI_STATUS="unknown"
+CI_OUTPUT=$(gh pr checks "${PR}" --repo tinyhumansai/openhuman 2>/dev/null || echo "")
+if [ -n "${CI_OUTPUT}" ]; then
+    CI_FAIL=$(echo "${CI_OUTPUT}" | grep -c "fail\|X" || echo "0")
+    CI_PENDING=$(echo "${CI_OUTPUT}" | grep -c "pending\|*" || echo "0")
+    CI_PASS=$(echo "${CI_OUTPUT}" | grep -c "pass\|✓" || echo "0")
+    if [ "${CI_FAIL}" -gt 0 ]; then
+        CI_STATUS="failing"
+        echo "[Pre-check] CI: FAILING (${CI_FAIL} failed, ${CI_PASS} passed, ${CI_PENDING} pending)"
+    elif [ "${CI_PENDING}" -gt 0 ]; then
+        CI_STATUS="pending"
+        echo "[Pre-check] CI: PENDING (${CI_PASS} passed, ${CI_PENDING} pending)"
+    else
+        CI_STATUS="passing"
+        echo "[Pre-check] CI: ALL GREEN (${CI_PASS} passed)"
+    fi
+else
+    echo "[Pre-check] CI: Could not fetch checks"
+fi
+
 PRECHECK_END=$(date +%s)
 PRECHECK_DURATION=$((PRECHECK_END - PRECHECK_START))
 echo ""
@@ -147,6 +169,7 @@ echo "  Linked issues: ${HAS_LINKED_ISSUES}"
 echo "  Dep changes:   ${HAS_DEP_CHANGES}"
 echo "  Logic changes: ${HAS_LOGIC_CHANGES}"
 echo "  CodeRabbit:    ${HAS_CODERABBIT}"
+echo "  CI status:     ${CI_STATUS}"
 echo ""
 
 # === Assemble prompt from modular parts ===
@@ -156,6 +179,19 @@ SECTIONS_INCLUDED="header, core-steps"
 
 # Always included
 PROMPT+="$(sed "s/__PR_NUMBER__/${PR}/g" "${PARTS_DIR}/header.md")"$'\n\n'
+
+# Inject CI status context
+PROMPT+="## CI Status (pre-checked)"$'\n'
+if [ "${CI_STATUS}" = "passing" ]; then
+    PROMPT+="All CI checks are **GREEN**. You may use APPROVE if the code is clean."$'\n\n'
+elif [ "${CI_STATUS}" = "failing" ]; then
+    PROMPT+="CI checks are **FAILING**. Do NOT use APPROVE event — use COMMENT if code is clean (\"looks clean, will approve once CI passes\") or REQUEST_CHANGES if code also has issues."$'\n\n'
+elif [ "${CI_STATUS}" = "pending" ]; then
+    PROMPT+="CI checks are **PENDING**. Do NOT use APPROVE event — use COMMENT if code is clean (\"looks clean, will approve once CI passes\") or REQUEST_CHANGES if code also has issues."$'\n\n'
+else
+    PROMPT+="CI status could not be determined. Check CI manually before choosing event type."$'\n\n'
+fi
+
 PROMPT+="$(sed "s/__PR_NUMBER__/${PR}/g" "${PARTS_DIR}/core-steps.md")"$'\n\n'
 
 # Conditional: linked issues
