@@ -6,24 +6,22 @@ List all open PRs eligible for review. Output ONLY a JSON array of PR numbers, n
 
 1. List open non-draft PRs:
 ```bash
-gh pr list --repo tinyhumansai/openhuman --state open --json number,title,author,isDraft
+gh pr list --repo tinyhumansai/openhuman --state open --json number,title,author,isDraft --jq '[.[] | select(.isDraft == false)]'
 ```
 
-2. Filter out draft PRs.
-
-3. For each remaining PR, check if it's already in `to-be-approved/`:
+2. For each remaining PR, check if it's already in `to-be-approved/`:
 ```bash
 ls /Users/cyrus/Desktop/automation/review-pr/to-be-approved/
 ```
 If `PR-<N>.md` exists there, skip it.
 
-4. For each remaining PR, check if there are new commits since last review:
+3. For each remaining PR, check if there are new commits since last review:
 ```bash
 LATEST_COMMIT=$(gh pr view <N> --repo tinyhumansai/openhuman --json commits --jq '.commits[-1].oid')
 ```
 Read `/Users/cyrus/Desktop/automation/review-pr/tinyhumansai-openhuman/PR-<N>.md` if it exists. If `Last reviewed commit` matches `LATEST_COMMIT`, skip it (no new changes).
 
-5. For each remaining PR, run gate checks (from 02-gate-check.md):
+4. For each remaining PR, run gate checks:
 
 ### Gate A: CI status
 ```bash
