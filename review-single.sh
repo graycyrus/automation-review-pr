@@ -386,7 +386,7 @@ CLAUDE_START=$(date +%s)
 echo "--- Claude review started at $(date -u +"%Y-%m-%dT%H:%M:%SZ") ---"
 claude -p "${PROMPT}" \
     --model "${REVIEW_MODEL}" \
-    --max-budget-usd 0.50 \
+    --max-budget-usd 1.00 \
     --allowedTools "Bash,Read,Write" \
     --add-dir "${REPO_DIR}" || {
     CLAUDE_EXIT=$?
