@@ -224,7 +224,9 @@ router.post('/toggle', (req, res) => {
   }
 
   try {
-    execSync(`echo ${JSON.stringify(newCrontab)} | crontab -`);
+    const { spawnSync } = require('child_process');
+    const result = spawnSync('crontab', ['-'], { input: newCrontab, encoding: 'utf-8', timeout: 5000 });
+    if (result.status !== 0) throw new Error(result.stderr || 'crontab failed');
     const nowActive = !activeEntry;
     res.json({ active: nowActive, message: nowActive ? 'Cron activated' : 'Cron deactivated' });
   } catch (err) {
@@ -254,7 +256,9 @@ router.post('/schedule', (req, res) => {
   }
 
   try {
-    execSync(`echo ${JSON.stringify(newCrontab)} | crontab -`);
+    const { spawnSync } = require('child_process');
+    const result = spawnSync('crontab', ['-'], { input: newCrontab, encoding: 'utf-8', timeout: 5000 });
+    if (result.status !== 0) throw new Error(result.stderr || 'crontab failed');
     res.json({ schedule: schedule.trim(), human: cronToHuman(schedule.trim()) });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update crontab', details: err.message });

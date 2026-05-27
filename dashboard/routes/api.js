@@ -10,6 +10,15 @@ const { scanTrackingDir, scanLogsDir } = require('../parser');
 
 const router = express.Router();
 
+// Auth check for mutation endpoints within /api
+function checkAuth(req, res, next) {
+  const key = process.env.API_KEY;
+  if (!key) return next();
+  const header = req.headers['authorization']?.replace('Bearer ', '');
+  if (header === key) return next();
+  res.status(401).json({ error: 'Unauthorized' });
+}
+
 const BASE_DIR = path.resolve(__dirname, '../..');
 const TRACKING_DIR = path.join(BASE_DIR, 'tinyhumansai-openhuman');
 const APPROVED_DIR = path.join(BASE_DIR, 'to-be-approved');
@@ -205,7 +214,7 @@ router.get('/status', (req, res) => {
 });
 
 // POST /api/prs/:id/sync — sync a single PR (GitHub + tracking file)
-router.post('/prs/:id/sync', (req, res) => {
+router.post('/prs/:id/sync', checkAuth, (req, res) => {
   const id = parseInt(req.params.id, 10);
   try {
     // Re-parse tracking file if it exists
@@ -226,7 +235,7 @@ router.post('/prs/:id/sync', (req, res) => {
 });
 
 // POST /api/sync — force re-sync from files
-router.post('/sync', (req, res) => {
+router.post('/sync', checkAuth, (req, res) => {
   try {
     const trackingPrs = scanTrackingDir(TRACKING_DIR, 'tinyhumansai-openhuman');
     const approvedPrs = scanTrackingDir(APPROVED_DIR, 'to-be-approved');
@@ -266,7 +275,7 @@ router.post('/sync', (req, res) => {
 });
 
 // POST /api/github-sync — force GitHub re-fetch
-router.post('/github-sync', (req, res) => {
+router.post('/github-sync', checkAuth, (req, res) => {
   try {
     githubSync.fetchAllOpenPrs();
     res.json({ success: true });

@@ -49,12 +49,12 @@ log "Found ${OPEN_COUNT} open PR(s) — proceeding with discovery"
 # ─── Phase 1: Discover eligible PRs ───
 log "Phase 1: Discovering eligible PRs..."
 
-PR_JSON=$(claude -p "$(cat "${DISCOVER_PROMPT}")" \
+PR_JSON=$(timeout 600 claude -p "$(cat "${DISCOVER_PROMPT}")" \
     --model "${MODEL_DISCOVER:-haiku}" \
     --max-budget-usd 0.10 \
     --allowedTools "Bash,Read" \
     --add-dir "${REPO_DIR}" \
-    2>/dev/null)
+    2>/dev/null) || { log "Discovery timed out or failed"; exit 0; }
 
 PR_NUMBERS=$(echo "${PR_JSON}" | grep -oE '\[[ 0-9,]*\]' | head -1)
 
@@ -120,6 +120,7 @@ for PR in "${PRS[@]}"; do
 done
 
 # ─── Phase 3: Batch judge every 25 reviews ───
+REVIEWED_COUNT=$((${#PRS[@]} - FAILED))
 COUNTER_FILE="${SCRIPT_DIR}/.review-counter"
 PREV_COUNT=0
 if [ -f "${COUNTER_FILE}" ]; then
@@ -250,6 +251,7 @@ log "Git: Pushed to origin/main"
 
 # Cleanup old logs (keep last 7 days)
 find "${LOG_DIR}" -name "*.log" -mtime +7 -delete 2>/dev/null || true
+find "${LOG_DIR}" -name "*.md" -mtime +7 -delete 2>/dev/null || true
 
 CRON_END=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 REVIEWED=$((${#PRS[@]} - FAILED))

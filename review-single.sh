@@ -13,6 +13,14 @@ PR="$1"
 
 # Per-PR lock — prevent concurrent reviews of the same PR (macOS compatible)
 LOCK_FILE="/tmp/review-pr-${PR}.lock"
+# Clear stale locks older than 30 minutes
+if [ -d "${LOCK_FILE}" ]; then
+    LOCK_AGE=$(( $(date +%s) - $(stat -f %m "${LOCK_FILE}" 2>/dev/null || echo "0") ))
+    if [ "${LOCK_AGE}" -gt 1800 ]; then
+        rmdir "${LOCK_FILE}" 2>/dev/null || true
+        echo "Cleared stale lock for PR #${PR} (${LOCK_AGE}s old)"
+    fi
+fi
 if ! mkdir "${LOCK_FILE}" 2>/dev/null; then
     echo "PR #${PR} already being reviewed — skipping"
     exit 0
@@ -279,10 +287,12 @@ if [ -n "${INJECTION_WARNING}" ]; then
     PROMPT+="${INJECTION_WARNING}"$'\n\n'
 fi
 
-# Inject human block warning
+# Inject human block warning — also force COMMENT-only mode and cheap model
 if [ "${HUMAN_BLOCK}" = "true" ]; then
-    PROMPT+="## HUMAN REVIEWER BLOCK"$'\n'
-    PROMPT+="@${HUMAN_BLOCK_REVIEWER} has an active CHANGES_REQUESTED on this PR. Do NOT approve. Do NOT override their review. Post a COMMENT only — acknowledge their feedback and note you'll review after their concerns are addressed. Example: \"I see @${HUMAN_BLOCK_REVIEWER} has requested changes — deferring to their feedback. Will review once those are addressed.\""$'\n\n'
+    REVIEW_MODEL="${MODEL_REVIEW_SIMPLE:-haiku}"
+    echo "[Model] Human block active — forcing haiku (deference comment only)"
+    PROMPT+="## HUMAN REVIEWER BLOCK — COMMENT ONLY MODE"$'\n'
+    PROMPT+="@${HUMAN_BLOCK_REVIEWER} has an active CHANGES_REQUESTED on this PR. You MUST post a COMMENT only. Do NOT use APPROVE or REQUEST_CHANGES. Do NOT override their review. Post: \"I see @${HUMAN_BLOCK_REVIEWER} has requested changes — deferring to their feedback. Will review once those are addressed.\" Then update the tracking file and stop. Do NOT do a full code review."$'\n\n'
 fi
 
 # Inject CI status context
@@ -365,11 +375,18 @@ echo "{\"pr\":${PR},\"running\":true,\"started\":\"${REVIEW_START}\"}" > "${STAT
 # Single Claude invocation
 CLAUDE_START=$(date +%s)
 echo "--- Claude review started at $(date -u +"%Y-%m-%dT%H:%M:%SZ") ---"
-claude -p "${PROMPT}" \
+timeout 900 claude -p "${PROMPT}" \
     --model "${REVIEW_MODEL}" \
     --max-budget-usd 0.50 \
     --allowedTools "Bash,Read,Write" \
-    --add-dir "${REPO_DIR}"
+    --add-dir "${REPO_DIR}" || {
+    CLAUDE_EXIT=$?
+    if [ "${CLAUDE_EXIT}" -eq 124 ]; then
+        echo "[ERROR] Claude review timed out after 15 minutes"
+    else
+        echo "[ERROR] Claude review failed with exit code ${CLAUDE_EXIT}"
+    fi
+}
 CLAUDE_END=$(date +%s)
 CLAUDE_DURATION=$((CLAUDE_END - CLAUDE_START))
 echo ""
@@ -412,11 +429,11 @@ if [ -f "${JUDGE_SINGLE_PROMPT}" ]; then
         | sed "s/__TIMESTAMP__/${TIMESTAMP}/g")
 
     JUDGE_LOG="${LOG_DIR}/judge-PR-${PR}-${TIMESTAMP}.md"
-    claude -p "${JUDGE_INPUT}" \
+    timeout 300 claude -p "${JUDGE_INPUT}" \
         --model "${MODEL_JUDGE:-haiku}" \
         --max-budget-usd 0.10 \
         --allowedTools "Bash,Read,Write" \
-        >"${JUDGE_LOG}" 2>&1 || echo "[Judge] Quality gate failed — review already posted"
+        >"${JUDGE_LOG}" 2>&1 || echo "[Judge] Quality gate failed or timed out"
 
     JUDGE_END=$(date +%s)
     JUDGE_DURATION=$((JUDGE_END - JUDGE_START))
