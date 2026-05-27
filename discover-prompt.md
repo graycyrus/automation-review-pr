@@ -19,11 +19,11 @@ ls /Users/cyrus/Desktop/automation/review-pr/already-merged/
 ```
 If `PR-<N>.md` exists in ANY of these directories, skip it.
 
-**Check B — GitHub review decision (catches approvals from other reviewers):**
+**Check B — GitHub approvals from real reviewers (not bots):**
 ```bash
-gh pr view <N> --repo tinyhumansai/openhuman --json reviewDecision --jq '.reviewDecision'
+gh api repos/tinyhumansai/openhuman/pulls/<N>/reviews --jq '[.[] | select(.state == "APPROVED" and (.user.login | test("\\[bot\\]$") | not))] | length'
 ```
-If `reviewDecision` is `APPROVED`, skip it — someone already approved this PR.
+If any non-bot user has approved, skip it — a real person already approved this PR. Ignore approvals from `coderabbitai[bot]` and other bots.
 
 3. For each remaining PR, check if there are new commits since last review:
 ```bash
