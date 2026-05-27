@@ -178,15 +178,35 @@ DIFF_LINES=$(echo "${DIFF_SUMMARY}" | grep -oE '[0-9]+ insertion' | grep -oE '[0
 DIFF_DELS=$(echo "${DIFF_SUMMARY}" | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
 TOTAL_DIFF=$((DIFF_LINES + DIFF_DELS))
 
-if [ "${HAS_LOGIC_CHANGES}" = "false" ]; then
-    REVIEW_MODEL="${MODEL_REVIEW_SIMPLE:-haiku}"
-    echo "[Model] Simple PR (no logic changes) → ${REVIEW_MODEL}"
-elif [ "${FILE_COUNT}" -ge 10 ] || [ "${TOTAL_DIFF}" -ge 500 ]; then
+# Check for security signals (labels, CVE/GHSA in title or body)
+IS_SECURITY="false"
+if echo "${PR_LABELS}" | grep -qiE 'security|cve|ghsa|vulnerability'; then
+    IS_SECURITY="true"
+elif echo "${PR_TITLE}" | grep -qiE 'security|cve|ghsa|vuln'; then
+    IS_SECURITY="true"
+elif echo "${PR_BODY}" | grep -qiE 'GHSA-|CVE-'; then
+    IS_SECURITY="true"
+fi
+
+# Route to complex model if ANY of these are true
+if [ "${IS_SECURITY}" = "true" ]; then
     REVIEW_MODEL="${MODEL_REVIEW_COMPLEX:-sonnet}"
-    echo "[Model] Complex PR (${FILE_COUNT} files, ${TOTAL_DIFF} lines) → ${REVIEW_MODEL}"
+    echo "[Model] Security PR → ${REVIEW_MODEL}"
+elif [ "${TOTAL_DIFF}" -ge 200 ]; then
+    REVIEW_MODEL="${MODEL_REVIEW_COMPLEX:-sonnet}"
+    echo "[Model] Large PR (${TOTAL_DIFF} lines) → ${REVIEW_MODEL}"
+elif [ "${FILE_COUNT}" -ge 8 ]; then
+    REVIEW_MODEL="${MODEL_REVIEW_COMPLEX:-sonnet}"
+    echo "[Model] Many files (${FILE_COUNT}) → ${REVIEW_MODEL}"
+elif [ "${HAS_DEP_CHANGES}" = "true" ]; then
+    REVIEW_MODEL="${MODEL_REVIEW_COMPLEX:-sonnet}"
+    echo "[Model] Dependency changes → ${REVIEW_MODEL}"
+elif [ "${HAS_LOGIC_CHANGES}" = "true" ]; then
+    REVIEW_MODEL="${MODEL_REVIEW_COMPLEX:-sonnet}"
+    echo "[Model] Logic changes → ${REVIEW_MODEL}"
 else
-    REVIEW_MODEL="${MODEL_REVIEW_COMPLEX:-sonnet}"
-    echo "[Model] Medium PR → ${REVIEW_MODEL}"
+    REVIEW_MODEL="${MODEL_REVIEW_SIMPLE:-haiku}"
+    echo "[Model] Simple PR (docs/config/i18n only, <200 lines) → ${REVIEW_MODEL}"
 fi
 
 # === Assemble prompt from modular parts ===
