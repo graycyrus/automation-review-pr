@@ -21,7 +21,18 @@ Authority: full auto (approve + merge). Tone: direct, blunt, constructive.
 
 **Output line** may also end with: `→ APPROVED (merge after <ISO timestamp>)` or `→ APPROVED + MERGED`.
 
-**AI summary cross-check**: Before final decision, check tracking file for `## AI Summary`. If none exists, assess the PR yourself: what it does, risk level (Zero/Low/Medium/High), safe to merge? If summary says "High risk" or "not safe" → re-examine before approving.
+**AI summary cross-check**: Before making your final APPROVE/REQUEST_CHANGES/COMMENT decision, you MUST generate a risk assessment. This is not optional.
+
+1. Read the full diff and PR body, then write this assessment (include it in the tracking file under `## AI Summary`):
+   - **What it does**: Plain English, 2-3 sentences. What changes and why it matters.
+   - **Breaking risk**: Zero / Low / Medium / High. Consider: does it change public APIs, shared types, DB schemas, config formats, or exported functions?
+   - **Security risk**: Zero / Low / Medium / High. Check OWASP items, secrets, auth, injection surfaces.
+   - **Bottom line**: One sentence — "Safe to merge" or "Not safe to merge — [reason]".
+
+2. Use the assessment as a gate:
+   - Breaking risk High OR Security risk High → do NOT approve, even if individual code looks fine. REQUEST_CHANGES.
+   - Bottom line says "Not safe" → do NOT approve.
+   - The assessment catches high-level risks you might miss when deep in the diff.
 
 **Never leak internals** — no cooldowns, tracking files, override rules, merge timers, or process details in the GitHub review body. Public-facing only. Never say "merging after confirmation" or similar — you don't announce merge intent in reviews.
 
