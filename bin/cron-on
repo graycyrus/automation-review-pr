@@ -1,13 +1,29 @@
 #!/bin/bash
-# Activate the hourly cron job
-# Usage: cron-on [schedule]
-#   e.g: cron-on           → hourly (default)
-#   e.g: cron-on "*/30 * * * *"  → every 30 min
+# Activate the cron job
+# Usage: cron-on [minutes]
+#   e.g: cron-on         → every 60 min (default)
+#   e.g: cron-on 30      → every 30 min
+#   e.g: cron-on 15      → every 15 min
+#   e.g: cron-on 120     → every 2 hours
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CRON_SCRIPT="${SCRIPT_DIR}/cron-pr-review.sh"
-SCHEDULE="${1:-0 * * * *}"
+
+MINUTES="${1:-60}"
+
+# Convert minutes to cron expression
+if [ "${MINUTES}" -eq 60 ]; then
+    SCHEDULE="0 * * * *"
+    HUMAN="every hour"
+elif [ "${MINUTES}" -lt 60 ]; then
+    SCHEDULE="*/${MINUTES} * * * *"
+    HUMAN="every ${MINUTES} min"
+else
+    HOURS=$((MINUTES / 60))
+    SCHEDULE="0 */${HOURS} * * *"
+    HUMAN="every ${HOURS} hours"
+fi
 
 CURRENT=$(crontab -l 2>/dev/null || echo "")
 
@@ -19,7 +35,5 @@ NEW="${CLEANED}
 ${SCHEDULE} ${CRON_SCRIPT}"
 
 echo "${NEW}" | crontab -
-echo "Cron ACTIVATED: ${SCHEDULE}"
+echo "Cron ACTIVATED: ${HUMAN} (${SCHEDULE})"
 echo "Script: ${CRON_SCRIPT}"
-echo ""
-echo "Verify: crontab -l | grep cron-pr"
