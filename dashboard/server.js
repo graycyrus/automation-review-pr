@@ -44,7 +44,7 @@ function rateLimit(req, res, next) {
   const now = Date.now();
   if (!triggerLimits[ip]) triggerLimits[ip] = [];
   triggerLimits[ip] = triggerLimits[ip].filter(t => now - t < 15 * 60 * 1000);
-  if (triggerLimits[ip].length >= 30) {
+  if (triggerLimits[ip].length >= 200) {
     return res.status(429).json({ error: 'Too many requests — try again later' });
   }
   triggerLimits[ip].push(now);
