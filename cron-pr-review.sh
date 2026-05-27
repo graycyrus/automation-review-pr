@@ -18,6 +18,11 @@ export PATH="/Users/cyrus/.nvm/versions/node/v22.22.1/bin:/usr/local/bin:/usr/bi
 export HOME="/Users/cyrus"
 export CRON_MODE=1
 
+# Load .env
+if [ -f "${SCRIPT_DIR}/.env" ]; then
+    set -a; source "${SCRIPT_DIR}/.env"; set +a
+fi
+
 mkdir -p "${LOG_DIR}"
 mkdir -p "${SCRIPT_DIR}/to-be-approved"
 mkdir -p "${SCRIPT_DIR}/tinyhumansai-openhuman"
@@ -33,10 +38,20 @@ for cmd in claude gh; do
     fi
 done
 
+# ─── Pre-check: Skip if no open PRs (avoids LLM call) ───
+OPEN_COUNT=$(gh pr list --repo tinyhumansai/openhuman --state open --json number --jq length 2>/dev/null || echo "0")
+if [ "${OPEN_COUNT}" = "0" ]; then
+    log "No open PRs found. Done."
+    exit 0
+fi
+log "Found ${OPEN_COUNT} open PR(s) — proceeding with discovery"
+
 # ─── Phase 1: Discover eligible PRs ───
 log "Phase 1: Discovering eligible PRs..."
 
 PR_JSON=$(claude -p "$(cat "${DISCOVER_PROMPT}")" \
+    --model "${MODEL_DISCOVER:-haiku}" \
+    --max-budget-usd 0.10 \
     --allowedTools "Bash,Read" \
     --add-dir "${REPO_DIR}" \
     2>/dev/null)
@@ -116,6 +131,8 @@ if [ "${REVIEWED_COUNT}" -gt 0 ]; then
         JUDGE_LOG="${LOG_DIR}/judge-${TIMESTAMP}.log"
         JUDGE_START=$(date +%s)
         claude -p "${JUDGE_INPUT}" \
+            --model "${MODEL_JUDGE:-haiku}" \
+            --max-budget-usd 0.15 \
             --allowedTools "Bash,Read,Write" \
             >"${JUDGE_LOG}" 2>&1 || log "  Judge run failed"
         JUDGE_END=$(date +%s)

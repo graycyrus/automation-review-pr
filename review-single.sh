@@ -172,6 +172,22 @@ echo "  CodeRabbit:    ${HAS_CODERABBIT}"
 echo "  CI status:     ${CI_STATUS}"
 echo ""
 
+# === Model routing based on PR complexity ===
+DIFF_LINES=$(echo "${DIFF_SUMMARY}" | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "0")
+DIFF_DELS=$(echo "${DIFF_SUMMARY}" | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "0")
+TOTAL_DIFF=$((DIFF_LINES + DIFF_DELS))
+
+if [ "${HAS_LOGIC_CHANGES}" = "false" ]; then
+    REVIEW_MODEL="${MODEL_REVIEW_SIMPLE:-haiku}"
+    echo "[Model] Simple PR (no logic changes) → ${REVIEW_MODEL}"
+elif [ "${FILE_COUNT}" -ge 10 ] || [ "${TOTAL_DIFF}" -ge 500 ]; then
+    REVIEW_MODEL="${MODEL_REVIEW_COMPLEX:-sonnet}"
+    echo "[Model] Complex PR (${FILE_COUNT} files, ${TOTAL_DIFF} lines) → ${REVIEW_MODEL}"
+else
+    REVIEW_MODEL="${MODEL_REVIEW_COMPLEX:-sonnet}"
+    echo "[Model] Medium PR → ${REVIEW_MODEL}"
+fi
+
 # === Assemble prompt from modular parts ===
 echo "--- Assembling prompt ---"
 PROMPT=""
@@ -237,6 +253,15 @@ if [ -f "${REVIEWER_IDENTITY}" ]; then
     SECTIONS_INCLUDED+=", reviewer-identity"
 fi
 
+# Merge criteria — only injected when PR is already approved/clean (rare, saves tokens)
+MERGE_CRITERIA="${SCRIPT_DIR}/reviewers/merge-criteria.md"
+if [ -f "${MERGE_CRITERIA}" ]; then
+    if [ -f "${SCRIPT_DIR}/approved/PR-${PR}.md" ] || [ -f "${SCRIPT_DIR}/to-be-approved/PR-${PR}.md" ]; then
+        PROMPT+="$(sed "s/__PR_NUMBER__/${PR}/g" "${MERGE_CRITERIA}")"$'\n\n'
+        SECTIONS_INCLUDED+=", merge-criteria"
+    fi
+fi
+
 PROMPT+="$(sed "s/__PR_NUMBER__/${PR}/g" "${PARTS_DIR}/footer.md")"
 SECTIONS_INCLUDED+=", review-post, tracking-update, footer"
 
@@ -252,6 +277,8 @@ echo "{\"pr\":${PR},\"running\":true,\"started\":\"${REVIEW_START}\"}" > "${STAT
 CLAUDE_START=$(date +%s)
 echo "--- Claude review started at $(date -u +"%Y-%m-%dT%H:%M:%SZ") ---"
 claude -p "${PROMPT}" \
+    --model "${REVIEW_MODEL}" \
+    --max-budget-usd 0.50 \
     --allowedTools "Bash,Read,Write" \
     --add-dir "${REPO_DIR}"
 CLAUDE_END=$(date +%s)
