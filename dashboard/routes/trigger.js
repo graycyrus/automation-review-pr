@@ -423,12 +423,32 @@ router.get('/merge-preflight/:id', (req, res) => {
     checks.push({ name: 'Has approval', pass: out === 'APPROVED' });
   } catch { checks.push({ name: 'Has approval', pass: false }); }
 
-  // CI checks
+  // CI checks — fetch required check names from ruleset
+  let requiredChecks = new Set();
+  try {
+    const ruleOut = execSync(
+      `gh api repos/${REPO}/rulesets --jq '.[].id'`,
+      { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+    for (const ruleId of ruleOut.trim().split('\n').filter(Boolean)) {
+      try {
+        const ruleDetail = execSync(
+          `gh api repos/${REPO}/rulesets/${ruleId} --jq '[.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | .[]'`,
+          { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+        );
+        for (const name of ruleDetail.trim().split('\n').filter(Boolean)) {
+          requiredChecks.add(name);
+        }
+      } catch {}
+    }
+  } catch {}
+
   try {
     const out = execSync(`gh pr checks ${prId} --repo ${REPO} --json name,bucket`, { encoding: 'utf-8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] });
     const ciChecks = JSON.parse(out);
     for (const c of ciChecks) {
-      checks.push({ name: c.name, pass: c.bucket === 'pass' || c.bucket === 'skipping', bucket: c.bucket });
+      const required = requiredChecks.has(c.name);
+      checks.push({ name: c.name, pass: c.bucket === 'pass' || c.bucket === 'skipping', bucket: c.bucket, required });
     }
   } catch {}
 

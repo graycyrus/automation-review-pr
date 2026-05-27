@@ -716,14 +716,20 @@ async function mergePr(prId, btn) {
     const hasApprovalFailing = data.checks.some(c => c.name === 'Has approval' && !c.pass);
 
     const checksRows = data.checks.map(c => {
-      const badge = c.pass
-        ? '<span class="badge badge-green">PASS</span>'
-        : '<span class="badge badge-red">FAIL</span>';
+      let badge;
+      if (c.pass) {
+        badge = '<span class="badge badge-green">PASS</span>';
+      } else if (c.required === false) {
+        badge = '<span class="badge badge-yellow">FAIL</span>';
+      } else {
+        badge = '<span class="badge badge-red">FAIL</span>';
+      }
+      const reqTag = c.required === true ? ' <span style="color:var(--text-muted);font-size:11px">(required)</span>' : c.required === false ? ' <span style="color:var(--text-muted);font-size:11px">(optional)</span>' : '';
       const detail = c.bucket && !c.pass ? `<span style="color:var(--text-muted);font-size:12px">(${c.bucket})</span>` : '';
       const dismissBtn = (c.name === 'Has approval' && !c.pass)
         ? `<button class="btn btn-sm btn-danger" style="margin-left:8px" onclick="dismissBlockingReviews(${prId})">Dismiss blocking reviews</button>`
         : '';
-      return `<tr><td>${badge}</td><td>${esc(c.name)} ${detail}${dismissBtn}</td></tr>`;
+      return `<tr><td>${badge}</td><td>${esc(c.name)}${reqTag} ${detail}${dismissBtn}</td></tr>`;
     }).join('');
 
     const passCount = data.checks.filter(c => c.pass).length;
