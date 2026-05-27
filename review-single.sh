@@ -148,18 +148,55 @@ else
     echo "[Pre-check] No CodeRabbit review"
 fi
 
+# Check for active human CHANGES_REQUESTED
+echo "[Pre-check] Checking for human review blocks..."
+HUMAN_BLOCK=""
+HUMAN_BLOCK_REVIEWER=""
+REVIEWS_JSON=$(gh api "repos/tinyhumansai/openhuman/pulls/${PR}/reviews" 2>/dev/null || echo "[]")
+if [ "${REVIEWS_JSON}" != "[]" ]; then
+    # Find CHANGES_REQUESTED from non-bot users
+    HUMAN_BLOCK_REVIEWER=$(echo "${REVIEWS_JSON}" | jq -r '[.[] | select(.state == "CHANGES_REQUESTED" and (.user.login | test("\\[bot\\]$") | not))] | last | .user.login // empty' 2>/dev/null || true)
+    if [ -n "${HUMAN_BLOCK_REVIEWER}" ]; then
+        HUMAN_BLOCK="true"
+        echo "[Pre-check] HUMAN BLOCK: @${HUMAN_BLOCK_REVIEWER} has CHANGES_REQUESTED — will not override"
+    else
+        echo "[Pre-check] No human review blocks"
+    fi
+fi
+
+# Check if we already have an active approval on this commit (prevent rubber-stamp re-reviews)
+echo "[Pre-check] Checking for existing approval..."
+LATEST_COMMIT=$(gh pr view "${PR}" --repo tinyhumansai/openhuman --json commits --jq '.commits[-1].oid' 2>/dev/null || echo "")
+ALREADY_APPROVED="false"
+if [ -n "${LATEST_COMMIT}" ] && [ "${REVIEWS_JSON}" != "[]" ]; then
+    EXISTING_APPROVAL=$(echo "${REVIEWS_JSON}" | jq -r "[.[] | select(.user.login == \"graycyrus\" and .state == \"APPROVED\" and .commit_id == \"${LATEST_COMMIT}\")] | length" 2>/dev/null || echo "0")
+    if [ "${EXISTING_APPROVAL}" -gt 0 ] 2>/dev/null; then
+        ALREADY_APPROVED="true"
+        echo "[Pre-check] Already approved this commit — skipping re-review"
+    fi
+fi
+
+if [ "${ALREADY_APPROVED}" = "true" ]; then
+    echo "PR #${PR}: already approved on commit ${LATEST_COMMIT:0:8} — skipping"
+    exit 0
+fi
+
 # Check CI status
 echo "[Pre-check] Checking CI status..."
 CI_STATUS="unknown"
 CI_OUTPUT=$(gh pr checks "${PR}" --repo tinyhumansai/openhuman 2>/dev/null || echo "")
 if [ -n "${CI_OUTPUT}" ]; then
     CI_FAIL=$(echo "${CI_OUTPUT}" | grep -cE "fail|X" || true)
+    CI_CANCEL=$(echo "${CI_OUTPUT}" | grep -cE "cancel" || true)
     CI_PENDING=$(echo "${CI_OUTPUT}" | grep -cE "pending" || true)
     CI_PASS=$(echo "${CI_OUTPUT}" | grep -cE "pass|✓" || true)
-    CI_FAIL=${CI_FAIL:-0}; CI_PENDING=${CI_PENDING:-0}; CI_PASS=${CI_PASS:-0}
+    CI_FAIL=${CI_FAIL:-0}; CI_CANCEL=${CI_CANCEL:-0}; CI_PENDING=${CI_PENDING:-0}; CI_PASS=${CI_PASS:-0}
     if [ "${CI_FAIL}" -gt 0 ] 2>/dev/null; then
         CI_STATUS="failing"
-        echo "[Pre-check] CI: FAILING (${CI_FAIL} failed, ${CI_PASS} passed, ${CI_PENDING} pending)"
+        echo "[Pre-check] CI: FAILING (${CI_FAIL} failed, ${CI_PASS} passed, ${CI_PENDING} pending, ${CI_CANCEL} cancelled)"
+    elif [ "${CI_CANCEL}" -gt 0 ] 2>/dev/null; then
+        CI_STATUS="failing"
+        echo "[Pre-check] CI: CANCELLED checks present (${CI_CANCEL} cancelled, ${CI_PASS} passed) — treating as NOT GREEN"
     elif [ "${CI_PENDING}" -gt 0 ] 2>/dev/null; then
         CI_STATUS="pending"
         echo "[Pre-check] CI: PENDING (${CI_PASS} passed, ${CI_PENDING} pending)"
@@ -240,6 +277,12 @@ PROMPT+="$(sed "s/__PR_NUMBER__/${PR}/g" "${PARTS_DIR}/header.md")"$'\n\n'
 if [ -n "${INJECTION_WARNING}" ]; then
     PROMPT+="## SECURITY WARNING"$'\n'
     PROMPT+="${INJECTION_WARNING}"$'\n\n'
+fi
+
+# Inject human block warning
+if [ "${HUMAN_BLOCK}" = "true" ]; then
+    PROMPT+="## HUMAN REVIEWER BLOCK"$'\n'
+    PROMPT+="@${HUMAN_BLOCK_REVIEWER} has an active CHANGES_REQUESTED on this PR. Do NOT approve. Do NOT override their review. Post a COMMENT only — acknowledge their feedback and note you'll review after their concerns are addressed. Example: \"I see @${HUMAN_BLOCK_REVIEWER} has requested changes — deferring to their feedback. Will review once those are addressed.\""$'\n\n'
 fi
 
 # Inject CI status context

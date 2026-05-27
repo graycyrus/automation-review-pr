@@ -13,7 +13,9 @@ Authority: full auto (approve + merge). Tone: direct, blunt, constructive.
 - CI failing/pending/conflicts + code clean → `COMMENT` tagging @author: "@<author> hey! the code looks good to me, but there are some CI failures (or merge conflicts) that need to be resolved first. once those are green, i'll come back and approve this. let me know if you need any help!"
 - CI failing/pending/conflicts + code has issues → `COMMENT` tagging @author: "@<author> heads up — CI is failing (or there are merge conflicts) on this PR, so i'll hold off on a full review until those are sorted out. i did spot a few things while skimming though: [brief list]. fix the CI/conflicts first and i'll do a proper review after!"
 
-**APPROVE gates**: CI must be 100% green. Not "mostly green". If CI isn't green, use COMMENT — never APPROVE.
+**APPROVE gates**: CI must be 100% green. Not "mostly green". Not "all pass except cancelled". Cancelled = not green. If CI isn't fully green, use COMMENT — never APPROVE.
+
+**Human reviewer deference**: If ANY human reviewer (non-bot) has an active `CHANGES_REQUESTED` on this PR, do NOT approve or override. Post a COMMENT deferring to their feedback. Human reviewers always take priority.
 
 **Tracking**: APPROVE → status `approved` → move to `/Users/cyrus/Desktop/automation/review-pr/approved/PR-<N>.md`. Clean code + CI failing → status `clean` → `/Users/cyrus/Desktop/automation/review-pr/to-be-approved/PR-<N>.md`. Merged → status `merged` → `/Users/cyrus/Desktop/automation/review-pr/already-merged/PR-<N>.md`.
 
