@@ -143,13 +143,14 @@ echo "[Pre-check] Checking CI status..."
 CI_STATUS="unknown"
 CI_OUTPUT=$(gh pr checks "${PR}" --repo tinyhumansai/openhuman 2>/dev/null || echo "")
 if [ -n "${CI_OUTPUT}" ]; then
-    CI_FAIL=$(echo "${CI_OUTPUT}" | grep -c "fail\|X" || echo "0")
-    CI_PENDING=$(echo "${CI_OUTPUT}" | grep -c "pending\|*" || echo "0")
-    CI_PASS=$(echo "${CI_OUTPUT}" | grep -c "pass\|✓" || echo "0")
-    if [ "${CI_FAIL}" -gt 0 ]; then
+    CI_FAIL=$(echo "${CI_OUTPUT}" | grep -cE "fail|X" || true)
+    CI_PENDING=$(echo "${CI_OUTPUT}" | grep -cE "pending" || true)
+    CI_PASS=$(echo "${CI_OUTPUT}" | grep -cE "pass|✓" || true)
+    CI_FAIL=${CI_FAIL:-0}; CI_PENDING=${CI_PENDING:-0}; CI_PASS=${CI_PASS:-0}
+    if [ "${CI_FAIL}" -gt 0 ] 2>/dev/null; then
         CI_STATUS="failing"
         echo "[Pre-check] CI: FAILING (${CI_FAIL} failed, ${CI_PASS} passed, ${CI_PENDING} pending)"
-    elif [ "${CI_PENDING}" -gt 0 ]; then
+    elif [ "${CI_PENDING}" -gt 0 ] 2>/dev/null; then
         CI_STATUS="pending"
         echo "[Pre-check] CI: PENDING (${CI_PASS} passed, ${CI_PENDING} pending)"
     else
