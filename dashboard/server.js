@@ -51,6 +51,13 @@ function rateLimit(req, res, next) {
   next();
 }
 
+// --- Built-in cron scheduler ---
+const cronScheduler = require('./cron-scheduler');
+const { cronState, startCronTimer, stopCronTimer } = cronScheduler;
+
+// Set interval from .env
+cronState.intervalMs = (parseInt(process.env.CRON_INTERVAL || '0', 10)) * 60 * 1000;
+
 // Serve static frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -86,6 +93,11 @@ function start() {
   // Start GitHub sync (fetches all open PRs on startup + every 5 min)
   githubSync.startPeriodicSync();
 
+  // Start built-in cron if configured
+  if (cronState.intervalMs > 0) {
+    startCronTimer();
+  }
+
   app.listen(PORT, () => {
     console.log(`[server] PR Review Dashboard running at http://localhost:${PORT}`);
   });
@@ -94,6 +106,7 @@ function start() {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n[server] Shutting down...');
+  stopCronTimer();
   githubSync.stopPeriodicSync();
   sync.stopWatching();
   db.close();
@@ -101,6 +114,7 @@ process.on('SIGINT', () => {
 });
 
 process.on('SIGTERM', () => {
+  stopCronTimer();
   githubSync.stopPeriodicSync();
   sync.stopWatching();
   db.close();
