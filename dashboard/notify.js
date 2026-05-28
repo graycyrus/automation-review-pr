@@ -32,8 +32,12 @@ function send(message) {
 }
 
 const notify = {
-  cronStarted(prCount) {
-    send(`🔄 <b>Cron started</b>\nDiscovered ${prCount} eligible PR(s)`);
+  cronCycleStarted() {
+    send(`🔄 <b>Cron cycle started</b>`);
+  },
+
+  cronEligible(prCount) {
+    send(`🔍 <b>${prCount} eligible PR(s)</b> to review`);
   },
 
   cronFinished(discovered, reviewed, failed, duration) {

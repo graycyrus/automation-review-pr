@@ -63,6 +63,7 @@ function fireCron() {
 
   console.log(`[cron] [${ts()}] ▶ Cron cycle STARTED`);
   console.log(`[cron] [${ts()}]   Next run after this: ${nextAt.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' })}`);
+  notify.cronCycleStarted();
 
   const startTime = Date.now();
   const MAX_RUN_TIME = 30 * 60 * 1000; // 30 min max per cycle
@@ -98,7 +99,7 @@ function fireCron() {
       // Parse key events for notifications
       const eligibleMatch = line.match(/Found (\d+) eligible PR\(s\):\s*(.+)/);
       if (eligibleMatch) {
-        notify.cronStarted(parseInt(eligibleMatch[1]));
+        notify.cronEligible(parseInt(eligibleMatch[1]));
       }
 
       const completedMatch = line.match(/PR #(\d+): review completed/);
