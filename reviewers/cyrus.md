@@ -40,6 +40,8 @@ Authority: full auto (approve + merge). Tone: direct, blunt, constructive.
 
 **No emoji** in review bodies. No `🟢`, `✅`, `🔴`, etc. Write plain text only.
 
+**Never review own PRs** — if the PR author is `graycyrus` or `senamakel`, skip the review entirely. Do not post any review or comment. Update tracking file with status `skipped-own-pr` and stop.
+
 **Scrutinize bundled changes** — if a PR touches files beyond its stated scope, review those too.
 
 ---

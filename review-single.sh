@@ -102,6 +102,13 @@ echo "  Labels: ${PR_LABELS:-none}"
 echo "  Review decision: ${PR_DECISION}"
 echo ""
 
+# Skip own PRs — never review your own code
+if [ "${PR_AUTHOR}" = "graycyrus" ] || [ "${PR_AUTHOR}" = "senamakel" ]; then
+    echo "[Pre-check] Skipping — own PR (author: ${PR_AUTHOR})"
+    echo "PR #${PR}: skipped — own PR"
+    exit 0
+fi
+
 # Fetch diff stat via GitHub API (gh pr diff --stat doesn't exist)
 echo "[Pre-check] Fetching diff stat..."
 DIFF_META=$(gh pr view "${PR}" --repo tinyhumansai/openhuman --json additions,deletions,changedFiles 2>/dev/null || echo "{}")
