@@ -29,6 +29,17 @@ mkdir -p "${SCRIPT_DIR}/tinyhumansai-openhuman"
 
 log() { echo "[$(date +"%H:%M:%S")] $*" | tee -a "${LOG_FILE}"; }
 
+# Telegram notification helper
+notify() {
+    local msg="$1"
+    if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d parse_mode="Markdown" \
+            -d text="${msg}" >/dev/null 2>&1 || true
+    fi
+}
+
 log "=== PR Review Cron — ${TIMESTAMP} ==="
 
 for cmd in claude gh; do
@@ -82,10 +93,19 @@ if [ -z "${ALL_PRS}" ]; then
 fi
 
 PRS=()
+SKIP_OWN=0
+SKIP_TRACKED=0
+SKIP_APPROVED=0
+SKIP_NO_NEW_COMMITS=0
+TOTAL_CHECKED=0
+
 for PR_NUM in ${ALL_PRS}; do
+    TOTAL_CHECKED=$((TOTAL_CHECKED + 1))
+
     # Skip own PRs
     PR_AUTHOR_CHECK=$(gh pr view "${PR_NUM}" --repo tinyhumansai/openhuman --json author --jq '.author.login' 2>/dev/null || echo "")
     if [ "${PR_AUTHOR_CHECK}" = "${GH_USER}" ]; then
+        SKIP_OWN=$((SKIP_OWN + 1))
         continue
     fi
 
@@ -93,12 +113,14 @@ for PR_NUM in ${ALL_PRS}; do
     if [ -f "${SCRIPT_DIR}/approved/PR-${PR_NUM}.md" ] || \
        [ -f "${SCRIPT_DIR}/to-be-approved/PR-${PR_NUM}.md" ] || \
        [ -f "${SCRIPT_DIR}/already-merged/PR-${PR_NUM}.md" ]; then
+        SKIP_TRACKED=$((SKIP_TRACKED + 1))
         continue
     fi
 
     # Skip if already approved on GitHub by a non-bot
     HUMAN_APPROVALS=$(gh api "repos/tinyhumansai/openhuman/pulls/${PR_NUM}/reviews" --jq '[.[] | select(.state == "APPROVED" and (.user.login | test("\\[bot\\]$") | not))] | length' 2>/dev/null || echo "0")
     if [ "${HUMAN_APPROVALS}" -gt 0 ] 2>/dev/null; then
+        SKIP_APPROVED=$((SKIP_APPROVED + 1))
         continue
     fi
 
@@ -107,6 +129,7 @@ for PR_NUM in ${ALL_PRS}; do
         LATEST=$(gh pr view "${PR_NUM}" --repo tinyhumansai/openhuman --json commits --jq '.commits[-1].oid' 2>/dev/null || echo "")
         LAST_REVIEWED=$(grep -m1 'Last reviewed commit' "${SCRIPT_DIR}/tinyhumansai-openhuman/PR-${PR_NUM}.md" 2>/dev/null | sed 's/.*: *//' || echo "")
         if [ -n "${LATEST}" ] && [ "${LATEST}" = "${LAST_REVIEWED}" ]; then
+            SKIP_NO_NEW_COMMITS=$((SKIP_NO_NEW_COMMITS + 1))
             continue
         fi
     fi
@@ -114,11 +137,25 @@ for PR_NUM in ${ALL_PRS}; do
     PRS+=("${PR_NUM}")
 done
 
+SKIP_SUMMARY="Checked ${TOTAL_CHECKED} PRs → ${#PRS[@]} eligible"
+[ "${SKIP_OWN}" -gt 0 ] && SKIP_SUMMARY+=", ${SKIP_OWN} own"
+[ "${SKIP_TRACKED}" -gt 0 ] && SKIP_SUMMARY+=", ${SKIP_TRACKED} already tracked"
+[ "${SKIP_APPROVED}" -gt 0 ] && SKIP_SUMMARY+=", ${SKIP_APPROVED} already approved"
+[ "${SKIP_NO_NEW_COMMITS}" -gt 0 ] && SKIP_SUMMARY+=", ${SKIP_NO_NEW_COMMITS} no new commits"
+log "${SKIP_SUMMARY}"
+
 if [ "${#PRS[@]}" -eq 0 ]; then
     log "No eligible PRs found. Done."
+    notify "🔍 *Cron — no eligible PRs*
+${SKIP_SUMMARY}"
     exit 0
 fi
 log "Found ${#PRS[@]} eligible PR(s): ${PRS[*]}"
+
+PR_LIST_FMT=$(printf '#%s ' "${PRS[@]}")
+notify "🚀 *Cron started* — reviewing ${#PRS[@]} PR(s)
+${PR_LIST_FMT}
+${SKIP_SUMMARY}"
 
 # Limit reviews per cycle (remaining PRs picked up next cycle)
 MAX_REVIEWS=${MAX_REVIEWS:-5}
@@ -173,6 +210,8 @@ if [ "${RATE_LIMITED:-false}" = "true" ]; then
     log "Cron will retry next cycle."
     CRON_END=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     log "CRON_META: started=${CRON_START} ended=${CRON_END} discovered=${#PRS[@]} reviewed=0 failed=${FAILED}"
+    notify "⚠️ *Cron — rate limited*
+Reviewed 0/${#PRS[@]} PRs before hitting rate limit. Retrying next cycle."
     exit 0
 fi
 
@@ -184,15 +223,27 @@ log "Succeeded: $((${#PRS[@]} - FAILED))"
 log "Failed: ${FAILED}"
 log ""
 
+REVIEW_SUMMARIES=""
 for PR in "${PRS[@]}"; do
     REVIEW_LOG="${LOG_DIR}/review-PR-${PR}-${TIMESTAMP}.log"
     if [ -f "${REVIEW_LOG}" ]; then
         SUMMARY=$(grep -E "^PR #${PR}:" "${REVIEW_LOG}" 2>/dev/null | tail -1)
         if [ -n "${SUMMARY}" ]; then
             log "  ${SUMMARY}"
+            REVIEW_SUMMARIES+="• ${SUMMARY}
+"
         fi
     fi
 done
+
+SUCCEEDED=$((${#PRS[@]} - FAILED))
+if [ "${FAILED}" -eq 0 ]; then
+    NOTIFY_ICON="✅"
+else
+    NOTIFY_ICON="⚠️"
+fi
+notify "${NOTIFY_ICON} *Cron complete* — ${SUCCEEDED}/${#PRS[@]} succeeded
+${REVIEW_SUMMARIES}"
 
 # ─── Phase 3: Batch judge every 25 reviews ───
 REVIEWED_COUNT=$((${#PRS[@]} - FAILED))
