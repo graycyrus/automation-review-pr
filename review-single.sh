@@ -103,7 +103,7 @@ echo "  Review decision: ${PR_DECISION}"
 echo ""
 
 # Skip own PRs — never review your own code
-if [ "${PR_AUTHOR}" = "graycyrus" ] || [ "${PR_AUTHOR}" = "senamakel" ]; then
+if [ "${PR_AUTHOR}" = "graycyrus" ]; then
     echo "[Pre-check] Skipping — own PR (author: ${PR_AUTHOR})"
     echo "PR #${PR}: skipped — own PR"
     exit 0
