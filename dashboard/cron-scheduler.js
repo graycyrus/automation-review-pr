@@ -38,8 +38,18 @@ function stopCronTimer() {
 
 function fireCron() {
   if (cronState.running) {
-    console.log(`[cron] [${ts()}] ⏭ Skipping — previous run still active (started ${cronState.lastRun})`);
-    return;
+    const runAge = Date.now() - new Date(cronState.lastRun).getTime();
+    if (runAge > 30 * 60 * 1000) {
+      console.log(`[cron] [${ts()}] ⚠ Previous run stuck for ${Math.round(runAge / 60000)}min — force-resetting`);
+      if (cronState.childPid) {
+        try { process.kill(cronState.childPid, 'SIGTERM'); } catch {}
+      }
+      cronState.running = false;
+      cronState.childPid = null;
+    } else {
+      console.log(`[cron] [${ts()}] ⏭ Skipping — previous run still active (started ${cronState.lastRun})`);
+      return;
+    }
   }
   cronState.running = true;
   cronState.lastRun = new Date().toISOString();
@@ -50,12 +60,25 @@ function fireCron() {
   console.log(`[cron] [${ts()}]   Next run after this: ${nextAt.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' })}`);
 
   const startTime = Date.now();
+  const MAX_RUN_TIME = 30 * 60 * 1000; // 30 min max per cycle
 
   const child = spawn('bash', [CRON_SCRIPT], {
     cwd: path.join(__dirname, '..'),
     env: { ...process.env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+
+  cronState.childPid = child.pid;
+
+  // Kill if stuck for too long
+  const killTimer = setTimeout(() => {
+    if (cronState.running) {
+      console.log(`[cron] [${ts()}] ⚠ TIMEOUT — killing stuck run after 30 min (PID ${child.pid})`);
+      try { process.kill(-child.pid, 'SIGTERM'); } catch {}
+      try { child.kill('SIGTERM'); } catch {}
+      cronState.running = false;
+    }
+  }, MAX_RUN_TIME);
 
   child.stdout.on('data', (d) => {
     const lines = d.toString().split('\n').filter(Boolean);
@@ -72,12 +95,21 @@ function fireCron() {
   });
 
   child.on('close', (code) => {
+    clearTimeout(killTimer);
     cronState.running = false;
+    cronState.childPid = null;
     const duration = Math.round((Date.now() - startTime) / 1000);
     const min = Math.floor(duration / 60);
     const sec = duration % 60;
     console.log(`[cron] [${ts()}] ■ Cron cycle FINISHED — exit ${code}, took ${min}m ${sec}s`);
     console.log(`[cron] [${ts()}]   Next run: ${new Date(Date.now() + cronState.intervalMs).toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' })}`);
+  });
+
+  child.on('error', (err) => {
+    clearTimeout(killTimer);
+    cronState.running = false;
+    cronState.childPid = null;
+    console.log(`[cron] [${ts()}] ✗ Cron cycle ERROR — ${err.message}`);
   });
 }
 
