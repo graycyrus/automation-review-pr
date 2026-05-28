@@ -38,6 +38,14 @@ for cmd in claude gh; do
     fi
 done
 
+# Get authenticated GitHub username
+GH_USER=$(gh api user --jq '.login' 2>/dev/null || echo "")
+if [ -z "${GH_USER}" ]; then
+    log "ERROR: Could not determine GitHub username — is gh authenticated?"
+    exit 1
+fi
+log "Authenticated as: ${GH_USER}"
+
 # ─── Pre-check: Skip if no open PRs (avoids LLM call) ───
 OPEN_COUNT=$(gh pr list --repo tinyhumansai/openhuman --state open --json number --jq length 2>/dev/null || echo "0")
 if [ "${OPEN_COUNT}" = "0" ]; then
@@ -49,8 +57,24 @@ log "Found ${OPEN_COUNT} open PR(s) — proceeding with discovery"
 # ─── Phase 1: Discover eligible PRs (pure bash — zero LLM cost) ───
 log "Phase 1: Discovering eligible PRs..."
 
-# Get all open non-draft PRs
-ALL_PRS=$(gh pr list --repo tinyhumansai/openhuman --state open --json number,isDraft,author --jq '[.[] | select(.isDraft == false)] | .[].number' 2>/dev/null || echo "")
+# Get all open non-draft PRs with review-requested info for prioritization
+ALL_PRS_JSON=$(gh pr list --repo tinyhumansai/openhuman --state open --json number,isDraft,author,reviewRequests --jq '[.[] | select(.isDraft == false)]' 2>/dev/null || echo "[]")
+if [ "${ALL_PRS_JSON}" = "[]" ] || [ -z "${ALL_PRS_JSON}" ]; then
+    log "No open non-draft PRs found. Done."
+    exit 0
+fi
+
+# Split into priority (tagged as reviewer) and rest
+PRIORITY_PRS=$(echo "${ALL_PRS_JSON}" | jq -r '[.[] | select(.reviewRequests[]?.login == "'"${GH_USER}"'")] | .[].number' 2>/dev/null || echo "")
+OTHER_PRS=$(echo "${ALL_PRS_JSON}" | jq -r '[.[] | select(([.reviewRequests[]?.login] | index("'"${GH_USER}"'")) == null)] | .[].number' 2>/dev/null || echo "")
+
+PRIORITY_COUNT=$(echo "${PRIORITY_PRS}" | grep -c '[0-9]' 2>/dev/null || echo "0")
+if [ "${PRIORITY_COUNT}" -gt 0 ]; then
+    log "Priority PRs (reviewer-tagged): $(echo ${PRIORITY_PRS} | tr '\n' ' ')"
+fi
+
+# Combine: priority first, then rest
+ALL_PRS=$(printf "%s\n%s" "${PRIORITY_PRS}" "${OTHER_PRS}" | grep '[0-9]' || echo "")
 if [ -z "${ALL_PRS}" ]; then
     log "No open non-draft PRs found. Done."
     exit 0
@@ -60,7 +84,7 @@ PRS=()
 for PR_NUM in ${ALL_PRS}; do
     # Skip own PRs
     PR_AUTHOR_CHECK=$(gh pr view "${PR_NUM}" --repo tinyhumansai/openhuman --json author --jq '.author.login' 2>/dev/null || echo "")
-    if [ "${PR_AUTHOR_CHECK}" = "graycyrus" ]; then
+    if [ "${PR_AUTHOR_CHECK}" = "${GH_USER}" ]; then
         continue
     fi
 
@@ -200,13 +224,13 @@ if [ "${NEW_COUNT}" -ge "${BATCH_JUDGE_THRESHOLD}" ]; then
     fi
 
     if [ -n "${BATCH_PR_LIST}" ]; then
-        BATCH_JUDGE_PROMPT="You are a batch quality judge for automated PR reviewer graycyrus on tinyhumansai/openhuman. ${NEW_COUNT} reviews have been posted since the last batch audit. Judge them ALL.
+        BATCH_JUDGE_PROMPT="You are a batch quality judge for automated PR reviewer ${GH_USER} on tinyhumansai/openhuman. ${NEW_COUNT} reviews have been posted since the last batch audit. Judge them ALL.
 
 For each PR in: ${BATCH_PR_LIST}
 
 Fetch the review and PR metadata:
 \`\`\`bash
-gh api repos/tinyhumansai/openhuman/pulls/<N>/reviews --jq '.[] | select(.user.login == \"graycyrus\") | {state: .state, body: .body}'
+gh api repos/tinyhumansai/openhuman/pulls/<N>/reviews --jq '.[] | select(.user.login == \"${GH_USER}\") | {state: .state, body: .body}'
 gh pr view <N> --repo tinyhumansai/openhuman --json title,additions,deletions,changedFiles
 gh pr checks <N> --repo tinyhumansai/openhuman --json name,bucket --jq '[.[] | select(.bucket != \"pass\" and .bucket != \"skipping\")] | length'
 \`\`\`
