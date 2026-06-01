@@ -29,6 +29,24 @@ mkdir -p "${SCRIPT_DIR}/tinyhumansai-openhuman"
 
 log() { echo "[$(date +"%H:%M:%S")] $*" | tee -a "${LOG_FILE}"; }
 
+# ─── Cron-level lock: skip if a previous cron cycle is still running ───
+CRON_LOCK="/tmp/cron-pr-review.lock"
+CRON_PID_FILE="/tmp/cron-pr-review.pid"
+if [ -d "${CRON_LOCK}" ] && [ -f "${CRON_PID_FILE}" ]; then
+    OLD_CRON_PID=$(cat "${CRON_PID_FILE}" 2>/dev/null || echo "0")
+    if kill -0 "${OLD_CRON_PID}" 2>/dev/null; then
+        echo "[$(date +"%H:%M:%S")] Cron already running (PID ${OLD_CRON_PID}) — skipping this cycle" | tee -a "${LOG_FILE}"
+        exit 0
+    else
+        rm -rf "${CRON_LOCK}" "${CRON_PID_FILE}"
+    fi
+elif [ -d "${CRON_LOCK}" ]; then
+    rm -rf "${CRON_LOCK}"
+fi
+mkdir "${CRON_LOCK}" 2>/dev/null || { echo "[$(date +"%H:%M:%S")] Cron lock contention — skipping" | tee -a "${LOG_FILE}"; exit 0; }
+echo $$ > "${CRON_PID_FILE}"
+trap 'rm -rf "${CRON_LOCK}" "${CRON_PID_FILE}" 2>/dev/null' EXIT
+
 # Telegram notification helper
 notify() {
     local msg="$1"
@@ -171,16 +189,23 @@ git stash --quiet 2>/dev/null || true
 git pull --rebase origin main || log "Git: Pull failed, continuing anyway"
 git stash pop --quiet 2>/dev/null || true
 
-# ─── Phase 2: Review PRs in parallel via review-single.sh ───
-log "Phase 2: Launching reviews in parallel..."
+# ─── Phase 2: Review PRs with staggered launch (avoid rate limits) ───
+STAGGER_DELAY=${STAGGER_DELAY:-10}
+log "Phase 2: Launching reviews (${STAGGER_DELAY}s stagger between starts)..."
 
 REVIEW_PIDS=()
-for PR in "${PRS[@]}"; do
+for i in "${!PRS[@]}"; do
+    PR=${PRS[$i]}
     REVIEW_LOG="${LOG_DIR}/review-PR-${PR}-${TIMESTAMP}.log"
     log "  Starting review of PR #${PR}"
 
     bash "${SCRIPT_DIR}/review-single.sh" "${PR}" >"${REVIEW_LOG}" 2>&1 &
     REVIEW_PIDS+=($!)
+
+    # Stagger launches to avoid rate limits (skip delay after last PR)
+    if [ "$i" -lt $(( ${#PRS[@]} - 1 )) ]; then
+        sleep "${STAGGER_DELAY}"
+    fi
 done
 
 # Wait for all reviews
@@ -306,7 +331,7 @@ Write improvement signals to: ${LOG_DIR}/improvement-history.md (append)"
         BATCH_START=$(date +%s)
         claude -p "${BATCH_JUDGE_PROMPT}" \
             --model "${MODEL_JUDGE:-haiku}" \
-            --max-budget-usd 0.25 \
+            --max-budget-usd 0.75 \
             --allowedTools "Bash,Read,Write" \
             >"${BATCH_LOG}" 2>&1 || log "  Batch judge failed"
         BATCH_END=$(date +%s)
@@ -333,7 +358,7 @@ if [ "${REVIEWED_COUNT}" -gt 0 ]; then
         JUDGE_START=$(date +%s)
         claude -p "${JUDGE_INPUT}" \
             --model "${MODEL_JUDGE:-haiku}" \
-            --max-budget-usd 0.15 \
+            --max-budget-usd 0.50 \
             --allowedTools "Bash,Read,Write" \
             >"${JUDGE_LOG}" 2>&1 || log "  Judge run failed"
         JUDGE_END=$(date +%s)

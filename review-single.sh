@@ -388,17 +388,26 @@ echo ""
 
 echo "{\"pr\":${PR},\"running\":true,\"started\":\"${REVIEW_START}\"}" > "${STATUS_FILE}"
 
-# Single Claude invocation
+# Single Claude invocation (30-minute timeout to kill hung sessions)
+REVIEW_TIMEOUT=${REVIEW_TIMEOUT:-1800}
 CLAUDE_START=$(date +%s)
-echo "--- Claude review started at $(date -u +"%Y-%m-%dT%H:%M:%SZ") ---"
-CLAUDE_OUTPUT=$(claude -p "${PROMPT}" \
+echo "--- Claude review started at $(date -u +"%Y-%m-%dT%H:%M:%SZ") (timeout: ${REVIEW_TIMEOUT}s) ---"
+CLAUDE_EXIT=0
+CLAUDE_OUTPUT=$(timeout "${REVIEW_TIMEOUT}" claude -p "${PROMPT}" \
     --model "${REVIEW_MODEL}" \
     --max-budget-usd 1.00 \
     --allowedTools "Bash,Read,Write" \
-    --add-dir "${REPO_DIR}" 2>&1) || true
-CLAUDE_EXIT=$?
+    --add-dir "${REPO_DIR}" 2>&1) || CLAUDE_EXIT=$?
 CLAUDE_END=$(date +%s)
 CLAUDE_DURATION=$((CLAUDE_END - CLAUDE_START))
+
+# Detect timeout (exit code 124 from timeout command)
+if [ "${CLAUDE_EXIT}" -eq 124 ]; then
+    echo ""
+    echo "[ERROR] Review timed out after ${REVIEW_TIMEOUT}s — killing hung session"
+    echo "PR #${PR}: TIMED OUT after ${CLAUDE_DURATION}s"
+    exit 1
+fi
 
 echo "${CLAUDE_OUTPUT}"
 
@@ -459,7 +468,7 @@ if [ -f "${JUDGE_SINGLE_PROMPT}" ]; then
     JUDGE_LOG="${LOG_DIR}/judge-PR-${PR}-${TIMESTAMP}.md"
     claude -p "${JUDGE_INPUT}" \
         --model "${MODEL_JUDGE:-haiku}" \
-        --max-budget-usd 0.10 \
+        --max-budget-usd 0.50 \
         --allowedTools "Bash,Read,Write" \
         >"${JUDGE_LOG}" 2>&1 || echo "[Judge] Quality gate failed or timed out"
 
