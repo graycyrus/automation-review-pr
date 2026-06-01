@@ -127,10 +127,11 @@ for PR_NUM in ${ALL_PRS}; do
         continue
     fi
 
-    # Skip if already in approved/to-be-approved/already-merged
+    # Skip if already in approved/to-be-approved/already-merged/to-be-closed
     if [ -f "${SCRIPT_DIR}/approved/PR-${PR_NUM}.md" ] || \
        [ -f "${SCRIPT_DIR}/to-be-approved/PR-${PR_NUM}.md" ] || \
-       [ -f "${SCRIPT_DIR}/already-merged/PR-${PR_NUM}.md" ]; then
+       [ -f "${SCRIPT_DIR}/already-merged/PR-${PR_NUM}.md" ] || \
+       [ -f "${SCRIPT_DIR}/to-be-closed/PR-${PR_NUM}.md" ]; then
         SKIP_TRACKED=$((SKIP_TRACKED + 1))
         continue
     fi
@@ -142,10 +143,17 @@ for PR_NUM in ${ALL_PRS}; do
         continue
     fi
 
-    # Skip if no new commits since last review
-    if [ -f "${SCRIPT_DIR}/tinyhumansai-openhuman/PR-${PR_NUM}.md" ]; then
+    # Skip if no new commits since last review (check all tracking dirs)
+    TRACKING_FILE=""
+    for DIR in tinyhumansai-openhuman to-be-closed; do
+        if [ -f "${SCRIPT_DIR}/${DIR}/PR-${PR_NUM}.md" ]; then
+            TRACKING_FILE="${SCRIPT_DIR}/${DIR}/PR-${PR_NUM}.md"
+            break
+        fi
+    done
+    if [ -n "${TRACKING_FILE}" ]; then
         LATEST=$(gh pr view "${PR_NUM}" --repo tinyhumansai/openhuman --json commits --jq '.commits[-1].oid' 2>/dev/null || echo "")
-        LAST_REVIEWED=$(grep -m1 'Last reviewed commit' "${SCRIPT_DIR}/tinyhumansai-openhuman/PR-${PR_NUM}.md" 2>/dev/null | sed 's/.*: *//' || echo "")
+        LAST_REVIEWED=$(grep -m1 'Last reviewed commit' "${TRACKING_FILE}" 2>/dev/null | sed 's/.*[|: ] *//' || echo "")
         if [ -n "${LATEST}" ] && [ "${LATEST}" = "${LAST_REVIEWED}" ]; then
             SKIP_NO_NEW_COMMITS=$((SKIP_NO_NEW_COMMITS + 1))
             continue
