@@ -93,13 +93,55 @@ function getDb() {
     CREATE INDEX IF NOT EXISTS idx_pr_github_open ON pr_github(is_open);
   `);
 
-  // Migrate: add ai_summary column
+  // Migrate: add ai_summary columns
   const prColsAll = _db.prepare("PRAGMA table_info(prs)").all().map(c => c.name);
   if (!prColsAll.includes('ai_summary')) {
     _db.exec(`ALTER TABLE prs ADD COLUMN ai_summary TEXT`);
   }
   if (!prColsAll.includes('ai_summary_date')) {
     _db.exec(`ALTER TABLE prs ADD COLUMN ai_summary_date TEXT`);
+  }
+  // AI Summary breakdown
+  if (!prColsAll.includes('ai_summary_what')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ai_summary_what TEXT`);
+  }
+  if (!prColsAll.includes('ai_summary_breaking_risk')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ai_summary_breaking_risk TEXT`);
+  }
+  if (!prColsAll.includes('ai_summary_security_risk')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ai_summary_security_risk TEXT`);
+  }
+  if (!prColsAll.includes('ai_summary_bottom_line')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ai_summary_bottom_line TEXT`);
+  }
+  // AI Quality / slop detection
+  if (!prColsAll.includes('ai_slop_detected')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ai_slop_detected TEXT`);
+  }
+  if (!prColsAll.includes('ai_slop_structural')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ai_slop_structural TEXT`);
+  }
+  if (!prColsAll.includes('ai_slop_content')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ai_slop_content TEXT`);
+  }
+  if (!prColsAll.includes('ai_slop_behavioral')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ai_slop_behavioral TEXT`);
+  }
+  // UI Impact
+  if (!prColsAll.includes('ui_visual_change')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ui_visual_change TEXT`);
+  }
+  if (!prColsAll.includes('ui_user_flow')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ui_user_flow TEXT`);
+  }
+  if (!prColsAll.includes('ui_affected_surfaces')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ui_affected_surfaces TEXT`);
+  }
+  if (!prColsAll.includes('ui_risk')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ui_risk TEXT`);
+  }
+  if (!prColsAll.includes('ui_recommendation')) {
+    _db.exec(`ALTER TABLE prs ADD COLUMN ui_recommendation TEXT`);
   }
 
   // Migrate: rename is_insider → is_member
@@ -134,13 +176,26 @@ function getDb() {
 // --- PR queries ---
 
 const prQueries = {
-  upsert: `INSERT INTO prs (id, title, author, branch, base_branch, url, created_at, status, is_member, last_reviewed_commit, last_review_date, tracking_file_path, location, updated_at)
-    VALUES (@id, @title, @author, @branch, @base_branch, @url, @created_at, @status, @is_member, @last_reviewed_commit, @last_review_date, @tracking_file_path, @location, datetime('now'))
+  upsert: `INSERT INTO prs (id, title, author, branch, base_branch, url, created_at, status, is_member, last_reviewed_commit, last_review_date, tracking_file_path, location,
+      ai_summary, ai_summary_what, ai_summary_breaking_risk, ai_summary_security_risk, ai_summary_bottom_line,
+      ai_slop_detected, ai_slop_structural, ai_slop_content, ai_slop_behavioral,
+      ui_visual_change, ui_user_flow, ui_affected_surfaces, ui_risk, ui_recommendation, updated_at)
+    VALUES (@id, @title, @author, @branch, @base_branch, @url, @created_at, @status, @is_member, @last_reviewed_commit, @last_review_date, @tracking_file_path, @location,
+      @ai_summary, @ai_summary_what, @ai_summary_breaking_risk, @ai_summary_security_risk, @ai_summary_bottom_line,
+      @ai_slop_detected, @ai_slop_structural, @ai_slop_content, @ai_slop_behavioral,
+      @ui_visual_change, @ui_user_flow, @ui_affected_surfaces, @ui_risk, @ui_recommendation, datetime('now'))
     ON CONFLICT(id) DO UPDATE SET
       title=@title, author=@author, branch=@branch, base_branch=@base_branch, url=@url,
       status=@status, is_member=@is_member, last_reviewed_commit=@last_reviewed_commit,
       last_review_date=@last_review_date, tracking_file_path=@tracking_file_path,
-      location=@location, updated_at=datetime('now')`,
+      location=@location,
+      ai_summary=@ai_summary, ai_summary_what=@ai_summary_what, ai_summary_breaking_risk=@ai_summary_breaking_risk,
+      ai_summary_security_risk=@ai_summary_security_risk, ai_summary_bottom_line=@ai_summary_bottom_line,
+      ai_slop_detected=@ai_slop_detected, ai_slop_structural=@ai_slop_structural,
+      ai_slop_content=@ai_slop_content, ai_slop_behavioral=@ai_slop_behavioral,
+      ui_visual_change=@ui_visual_change, ui_user_flow=@ui_user_flow,
+      ui_affected_surfaces=@ui_affected_surfaces, ui_risk=@ui_risk, ui_recommendation=@ui_recommendation,
+      updated_at=datetime('now')`,
 
   getAll: `SELECT * FROM prs ORDER BY id DESC`,
 

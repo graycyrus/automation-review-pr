@@ -39,6 +39,20 @@ function migrate() {
       last_review_date: pr.last_review_date,
       tracking_file_path: pr.tracking_file_path,
       location: pr.location,
+      ai_summary: pr.ai_summary || null,
+      ai_summary_what: pr.ai_summary_what || null,
+      ai_summary_breaking_risk: pr.ai_summary_breaking_risk || null,
+      ai_summary_security_risk: pr.ai_summary_security_risk || null,
+      ai_summary_bottom_line: pr.ai_summary_bottom_line || null,
+      ai_slop_detected: pr.ai_slop_detected || null,
+      ai_slop_structural: pr.ai_slop_structural || null,
+      ai_slop_content: pr.ai_slop_content || null,
+      ai_slop_behavioral: pr.ai_slop_behavioral || null,
+      ui_visual_change: pr.ui_visual_change || null,
+      ui_user_flow: pr.ui_user_flow || null,
+      ui_affected_surfaces: pr.ui_affected_surfaces || null,
+      ui_risk: pr.ui_risk || null,
+      ui_recommendation: pr.ui_recommendation || null,
     });
 
     if (cycles.length > 0) {
