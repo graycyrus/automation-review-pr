@@ -392,19 +392,43 @@ echo "{\"pr\":${PR},\"running\":true,\"started\":\"${REVIEW_START}\"}" > "${STAT
 REVIEW_TIMEOUT=${REVIEW_TIMEOUT:-1800}
 CLAUDE_START=$(date +%s)
 echo "--- Claude review started at $(date -u +"%Y-%m-%dT%H:%M:%SZ") (timeout: ${REVIEW_TIMEOUT}s) ---"
-CLAUDE_EXIT=0
-CLAUDE_OUTPUT=$(timeout "${REVIEW_TIMEOUT}" claude -p "${PROMPT}" \
+
+# macOS doesn't have `timeout` — use background process + watchdog
+CLAUDE_TMPFILE=$(mktemp)
+claude -p "${PROMPT}" \
     --model "${REVIEW_MODEL}" \
     --max-budget-usd 1.00 \
     --allowedTools "Bash,Read,Write" \
-    --add-dir "${REPO_DIR}" 2>&1) || CLAUDE_EXIT=$?
+    --add-dir "${REPO_DIR}" >"${CLAUDE_TMPFILE}" 2>&1 &
+CLAUDE_PID=$!
+
+# Watchdog: kill after REVIEW_TIMEOUT
+(
+    sleep "${REVIEW_TIMEOUT}"
+    if kill -0 "${CLAUDE_PID}" 2>/dev/null; then
+        kill -TERM "${CLAUDE_PID}" 2>/dev/null
+        sleep 5
+        kill -9 "${CLAUDE_PID}" 2>/dev/null
+    fi
+) &
+WATCHDOG_PID=$!
+
+CLAUDE_EXIT=0
+wait "${CLAUDE_PID}" || CLAUDE_EXIT=$?
+
+# Kill watchdog if review finished before timeout
+kill "${WATCHDOG_PID}" 2>/dev/null; wait "${WATCHDOG_PID}" 2>/dev/null || true
+
+CLAUDE_OUTPUT=$(cat "${CLAUDE_TMPFILE}")
+rm -f "${CLAUDE_TMPFILE}"
+
 CLAUDE_END=$(date +%s)
 CLAUDE_DURATION=$((CLAUDE_END - CLAUDE_START))
 
-# Detect timeout (exit code 124 from timeout command)
-if [ "${CLAUDE_EXIT}" -eq 124 ]; then
+# Detect timeout (killed by watchdog)
+if [ "${CLAUDE_DURATION}" -ge "${REVIEW_TIMEOUT}" ] && [ "${CLAUDE_EXIT}" -ne 0 ]; then
     echo ""
-    echo "[ERROR] Review timed out after ${REVIEW_TIMEOUT}s — killing hung session"
+    echo "[ERROR] Review timed out after ${REVIEW_TIMEOUT}s — killed hung session"
     echo "PR #${PR}: TIMED OUT after ${CLAUDE_DURATION}s"
     exit 1
 fi
