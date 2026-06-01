@@ -143,9 +143,9 @@ for PR_NUM in ${ALL_PRS}; do
         continue
     fi
 
-    # Skip if no new commits since last review (check all tracking dirs)
+    # Skip if no new commits since last review (check ALL tracking dirs)
     TRACKING_FILE=""
-    for DIR in tinyhumansai-openhuman to-be-closed; do
+    for DIR in tinyhumansai-openhuman to-be-approved approved to-be-closed; do
         if [ -f "${SCRIPT_DIR}/${DIR}/PR-${PR_NUM}.md" ]; then
             TRACKING_FILE="${SCRIPT_DIR}/${DIR}/PR-${PR_NUM}.md"
             break
@@ -153,8 +153,10 @@ for PR_NUM in ${ALL_PRS}; do
     done
     if [ -n "${TRACKING_FILE}" ]; then
         LATEST=$(gh pr view "${PR_NUM}" --repo tinyhumansai/openhuman --json commits --jq '.commits[-1].oid' 2>/dev/null || echo "")
-        LAST_REVIEWED=$(grep -m1 'Last reviewed commit' "${TRACKING_FILE}" 2>/dev/null | sed 's/.*[|: ] *//' || echo "")
-        if [ -n "${LATEST}" ] && [ "${LATEST}" = "${LAST_REVIEWED}" ]; then
+        # Extract commit SHA — handles both old (**bold**: sha) and new (| table | sha |) formats
+        LAST_REVIEWED=$(grep -m1 'Last reviewed commit' "${TRACKING_FILE}" 2>/dev/null \
+            | grep -oE '[0-9a-f]{7,40}' || echo "")
+        if [ -n "${LATEST}" ] && [ -n "${LAST_REVIEWED}" ] && [ "${LATEST}" = "${LAST_REVIEWED}" ]; then
             SKIP_NO_NEW_COMMITS=$((SKIP_NO_NEW_COMMITS + 1))
             continue
         fi

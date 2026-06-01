@@ -192,20 +192,21 @@ if [ "${REVIEWS_JSON}" != "[]" ]; then
     fi
 fi
 
-# Check if we already have an active approval on this commit (prevent rubber-stamp re-reviews)
-echo "[Pre-check] Checking for existing approval..."
+# Check if we already reviewed this exact commit (prevent duplicate reviews)
+echo "[Pre-check] Checking for existing review on latest commit..."
 LATEST_COMMIT=$(gh pr view "${PR}" --repo tinyhumansai/openhuman --json commits --jq '.commits[-1].oid' 2>/dev/null || echo "")
-ALREADY_APPROVED="false"
+ALREADY_REVIEWED="false"
 if [ -n "${LATEST_COMMIT}" ] && [ "${REVIEWS_JSON}" != "[]" ]; then
-    EXISTING_APPROVAL=$(echo "${REVIEWS_JSON}" | jq -r "[.[] | select(.user.login == \"graycyrus\" and .state == \"APPROVED\" and .commit_id == \"${LATEST_COMMIT}\")] | length" 2>/dev/null || echo "0")
-    if [ "${EXISTING_APPROVAL}" -gt 0 ] 2>/dev/null; then
-        ALREADY_APPROVED="true"
-        echo "[Pre-check] Already approved this commit — skipping re-review"
+    # Check for ANY review (APPROVED, COMMENTED, or CHANGES_REQUESTED) by graycyrus on this commit
+    EXISTING_REVIEWS=$(echo "${REVIEWS_JSON}" | jq -r "[.[] | select(.user.login == \"graycyrus\" and .commit_id == \"${LATEST_COMMIT}\" and .body != \"\")] | length" 2>/dev/null || echo "0")
+    if [ "${EXISTING_REVIEWS}" -gt 0 ] 2>/dev/null; then
+        ALREADY_REVIEWED="true"
+        echo "[Pre-check] Already reviewed this commit (${EXISTING_REVIEWS} review(s)) — skipping"
     fi
 fi
 
-if [ "${ALREADY_APPROVED}" = "true" ]; then
-    echo "PR #${PR}: already approved on commit ${LATEST_COMMIT:0:8} — skipping"
+if [ "${ALREADY_REVIEWED}" = "true" ]; then
+    echo "PR #${PR}: already reviewed on commit ${LATEST_COMMIT:0:8} — skipping"
     exit 0
 fi
 
