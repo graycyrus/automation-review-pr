@@ -21,6 +21,9 @@ dashboard-next/data/*.db
 dashboard-next/data/*.db-shm
 dashboard-next/data/*.db-wal
 
+# Reviewer identity (private — not committed)
+reviewers/cyrus.md
+
 # Environment
 .env
 .env.local
