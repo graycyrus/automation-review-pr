@@ -259,7 +259,30 @@ function replaceCyclesForPr(prId, cycles) {
   const tx = db.transaction((prId, cycles) => {
     deleteStmt.run(prId);
     for (const cycle of cycles) {
-      insertStmt.run({ ...cycle, pr_id: prId });
+      // Only pass fields the insert statement expects, stringify any objects
+      const safe = {
+        pr_id: prId,
+        cycle_number: cycle.cycle_number,
+        type: cycle.type,
+        status: cycle.status,
+        started_at: cycle.started_at,
+        ended_at: cycle.ended_at,
+        duration_seconds: cycle.duration_seconds,
+        commit_sha: typeof cycle.commit_sha === 'object' ? JSON.stringify(cycle.commit_sha) : cycle.commit_sha,
+        summary: typeof cycle.summary === 'object' ? JSON.stringify(cycle.summary) : cycle.summary,
+        gates: typeof cycle.gates === 'object' ? JSON.stringify(cycle.gates) : cycle.gates,
+        areas_changed: typeof cycle.areas_changed === 'object' ? JSON.stringify(cycle.areas_changed) : cycle.areas_changed,
+        findings_critical: cycle.findings_critical || 0,
+        findings_major: cycle.findings_major || 0,
+        findings_minor: cycle.findings_minor || 0,
+        action_taken: typeof cycle.action_taken === 'object' ? JSON.stringify(cycle.action_taken) : cycle.action_taken,
+        github_review_url: typeof cycle.github_review_url === 'object' ? JSON.stringify(cycle.github_review_url) : cycle.github_review_url,
+        coderabbit_dedup: typeof cycle.coderabbit_dedup === 'object' ? JSON.stringify(cycle.coderabbit_dedup) : cycle.coderabbit_dedup,
+        resolution_actions: typeof cycle.resolution_actions === 'object' ? JSON.stringify(cycle.resolution_actions) : cycle.resolution_actions,
+        log_file_path: cycle.log_file_path,
+        reviewer: cycle.reviewer || 'graycyrus',
+      };
+      insertStmt.run(safe);
     }
   });
 
