@@ -560,6 +560,112 @@ tbody tr:hover { background: var(--bg-tertiary); }
   padding: 0;
 }
 
+.md-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  table-layout: fixed;
+}
+
+.md-content th, .md-content td {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.5;
+  vertical-align: top;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.md-content th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+  white-space: nowrap;
+  width: auto;
+}
+
+/* First column (labels) — fixed narrow width */
+.md-content th:first-child, .md-content td:first-child {
+  width: 160px;
+  min-width: 120px;
+  max-width: 200px;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Last column (values) — takes remaining space */
+.md-content th:last-child, .md-content td:last-child {
+  width: auto;
+}
+
+.md-content tr:hover {
+  background: var(--bg-tertiary);
+}
+
+.md-content h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 24px 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.md-content h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 20px 0 8px;
+}
+
+.md-content h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 14px 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.md-content ul {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.md-content li {
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.md-content p {
+  margin: 8px 0;
+}
+
+.md-content strong {
+  color: var(--text);
+}
+
+.md-content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 20px 0;
+}
+
+.md-content blockquote {
+  border-left: 3px solid var(--border);
+  margin: 8px 0;
+  padding: 4px 12px;
+  color: var(--text-muted);
+}
+
+.md-content em {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 /* Log viewer */
 .log-viewer {
   background: var(--bg);
