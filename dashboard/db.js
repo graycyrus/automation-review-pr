@@ -231,9 +231,29 @@ const cronQueries = {
   getAll: `SELECT * FROM cron_runs ORDER BY started_at DESC`,
 };
 
+// Fields the upsert statement requires but partial callers (e.g. github-sync,
+// which only knows GitHub metadata) may omit. On conflict these are preserved
+// from the existing row so a periodic sync never clobbers AI-summary / slop /
+// UI metadata written by the review pipeline; for brand-new rows they default
+// to null.
+const PR_OPTIONAL_FIELDS = [
+  'ai_summary', 'ai_summary_what', 'ai_summary_breaking_risk',
+  'ai_summary_security_risk', 'ai_summary_bottom_line',
+  'ai_slop_detected', 'ai_slop_structural', 'ai_slop_content', 'ai_slop_behavioral',
+  'ui_visual_change', 'ui_user_flow', 'ui_affected_surfaces',
+  'ui_risk', 'ui_recommendation',
+];
+
 function upsertPr(data) {
   const db = getDb();
-  return db.prepare(prQueries.upsert).run(data);
+  const existing = data.id != null ? db.prepare(prQueries.getById).get(data.id) : null;
+  const filled = { ...data };
+  for (const field of PR_OPTIONAL_FIELDS) {
+    if (!(field in filled)) {
+      filled[field] = existing ? (existing[field] ?? null) : null;
+    }
+  }
+  return db.prepare(prQueries.upsert).run(filled);
 }
 
 function getAllPrs() {

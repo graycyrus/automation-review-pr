@@ -41,7 +41,25 @@ PARTS_DIR="${SCRIPT_DIR}/prompt-parts"
 LOG_DIR="${SCRIPT_DIR}/logs"
 STATUS_FILE="${SCRIPT_DIR}/status.json"
 
-export PATH="/Users/cyrus/.nvm/versions/node/v22.22.1/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
+export PATH="/Users/cyrus/.nvm/versions/node/v22.22.1/bin:${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
+
+# Resolve a claude binary that supports --max-budget-usd. Multiple versions may
+# be installed (e.g. an old v1 at /usr/local/bin and a current one at
+# ~/.local/bin); a restricted PATH can otherwise pick the old one, which fails
+# with "unknown option '--max-budget-usd'". Honors a CLAUDE_BIN env override.
+resolve_claude_bin() {
+    local c
+    for c in "${CLAUDE_BIN:-}" "${HOME}/.local/bin/claude" "$(command -v claude 2>/dev/null)" /usr/local/bin/claude; do
+        [ -n "${c}" ] && [ -x "${c}" ] || continue
+        if "${c}" --help 2>/dev/null | grep -q -- '--max-budget-usd'; then
+            echo "${c}"; return 0
+        fi
+    done
+    return 1
+}
+CLAUDE_BIN="$(resolve_claude_bin)" || { echo "[ERROR] No 'claude' binary supporting --max-budget-usd found (checked ~/.local/bin, PATH, /usr/local/bin)"; exit 1; }
+export CLAUDE_BIN
+echo "[Setup] Using claude binary: ${CLAUDE_BIN} ($("${CLAUDE_BIN}" --version 2>/dev/null))"
 
 # Load .env
 if [ -f "${SCRIPT_DIR}/.env" ]; then
@@ -396,7 +414,7 @@ echo "--- Claude review started at $(date -u +"%Y-%m-%dT%H:%M:%SZ") (timeout: ${
 
 # macOS doesn't have `timeout` — use background process + watchdog
 CLAUDE_TMPFILE=$(mktemp)
-claude -p "${PROMPT}" \
+"${CLAUDE_BIN}" -p "${PROMPT}" \
     --model "${REVIEW_MODEL}" \
     --max-budget-usd 1.00 \
     --allowedTools "Bash,Read,Write" \
@@ -491,7 +509,7 @@ if [ -f "${JUDGE_SINGLE_PROMPT}" ]; then
         | sed "s/__TIMESTAMP__/${TIMESTAMP}/g")
 
     JUDGE_LOG="${LOG_DIR}/judge-PR-${PR}-${TIMESTAMP}.md"
-    claude -p "${JUDGE_INPUT}" \
+    "${CLAUDE_BIN}" -p "${JUDGE_INPUT}" \
         --model "${MODEL_JUDGE:-haiku}" \
         --max-budget-usd 0.50 \
         --allowedTools "Bash,Read,Write" \

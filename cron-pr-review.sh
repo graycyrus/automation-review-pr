@@ -13,10 +13,27 @@ TIMESTAMP=$(date +"%Y-%m-%d-%H%M")
 LOG_FILE="${LOG_DIR}/review-${TIMESTAMP}.log"
 CRON_START=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-# Ensure PATH includes required tools (cron has minimal PATH)
-export PATH="/Users/cyrus/.nvm/versions/node/v22.22.1/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
+# Ensure PATH includes required tools (cron has minimal PATH).
+# ~/.local/bin must precede /usr/local/bin so the current claude (v2+, which
+# supports --max-budget-usd) wins over any old v1 install at /usr/local/bin.
 export HOME="/Users/cyrus"
+export PATH="/Users/cyrus/.nvm/versions/node/v22.22.1/bin:${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
 export CRON_MODE=1
+
+# Resolve a claude binary supporting --max-budget-usd (shared with judge calls
+# and inherited by review-single.sh subprocesses via the exported var).
+resolve_claude_bin() {
+    local c
+    for c in "${CLAUDE_BIN:-}" "${HOME}/.local/bin/claude" "$(command -v claude 2>/dev/null)" /usr/local/bin/claude; do
+        [ -n "${c}" ] && [ -x "${c}" ] || continue
+        if "${c}" --help 2>/dev/null | grep -q -- '--max-budget-usd'; then
+            echo "${c}"; return 0
+        fi
+    done
+    return 1
+}
+CLAUDE_BIN="$(resolve_claude_bin)" || { echo "[ERROR] No 'claude' binary supporting --max-budget-usd found"; exit 1; }
+export CLAUDE_BIN
 
 # Load .env
 if [ -f "${SCRIPT_DIR}/.env" ]; then
@@ -339,7 +356,7 @@ Write improvement signals to: ${LOG_DIR}/improvement-history.md (append)"
 
         BATCH_LOG="${LOG_DIR}/batch-judge-${TIMESTAMP}.log"
         BATCH_START=$(date +%s)
-        claude -p "${BATCH_JUDGE_PROMPT}" \
+        "${CLAUDE_BIN}" -p "${BATCH_JUDGE_PROMPT}" \
             --model "${MODEL_JUDGE:-haiku}" \
             --max-budget-usd 0.75 \
             --allowedTools "Bash,Read,Write" \
@@ -366,7 +383,7 @@ if [ "${REVIEWED_COUNT}" -gt 0 ]; then
 
         JUDGE_LOG="${LOG_DIR}/judge-${TIMESTAMP}.log"
         JUDGE_START=$(date +%s)
-        claude -p "${JUDGE_INPUT}" \
+        "${CLAUDE_BIN}" -p "${JUDGE_INPUT}" \
             --model "${MODEL_JUDGE:-haiku}" \
             --max-budget-usd 0.50 \
             --allowedTools "Bash,Read,Write" \
